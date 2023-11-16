@@ -38,7 +38,7 @@ public:
         if (size + 1 > cap) cap = size + 1;
         capacity_ = cap;
         buf_ = (char*)malloc((size_t)capacity_ * sizeof(char));
-        memcpy(buf_, str, (size_t)size * sizeof(char)); 
+        memcpy(buf_, str, (size_t)size * sizeof(char));
         buf_[size] = '\0';
     }
 

@@ -1,5 +1,6 @@
 #include "requests.h"
-
+#include "utils.h"
+#include "../third_party/llhttp/include/llhttp.h"
 
 
 struct WriteThis {
@@ -52,10 +53,73 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
     return realsize;
 }
 
+struct HttpHeaderParser
+{
+    bool successful;
+    pg::Vector<Argument>& headers;
+
+    HttpHeaderParser(pg::Vector<Argument>& headers)
+        : headers(headers)
+    {
+        this->headers = headers; 
+    }
+
+    bool parse(const MemoryStruct* memory)
+    {
+        llhttp_settings_t settings;
+        llhttp_settings_init(&settings);
+        settings.on_header_field = on_header_field;
+        settings.on_header_value = on_header_value;
+
+        llhttp_t parser;
+        llhttp_init(&parser, HTTP_RESPONSE, &settings);
+        parser.data = this;
+
+        auto err = llhttp_execute(&parser, memory->memory, memory->size);
+
+        return err == HPE_OK;
+    }
+
+private:
+    
+    static int on_header_field(llhttp_t* parser, const char *at, size_t length)
+    {
+        HttpHeaderParser* self = (HttpHeaderParser*)parser->data;
+
+        Argument arg;
+        arg.arg_type = 0;
+        arg.name = pg::String(at, (int)length);
+        self->headers.push_back(arg);
+
+        return 0;
+    }
+
+    static int on_header_value(llhttp_t* parser, const char *at, size_t length)
+    {
+        HttpHeaderParser* self = (HttpHeaderParser*)parser->data;
+
+        if (self->headers.empty() || self->headers.back().value.length() > 0)
+        {
+            // we have a value, but without a header name to correlate it to
+            Argument arg;
+            arg.arg_type = 0;
+            arg.value = pg::String(at, (int)length);
+            self->headers.push_back(arg);
+        }
+        else
+        {
+            // add the value to the most recently added header
+            Argument &arg = self->headers.back();
+            arg.value = pg::String(at, (int)length);
+        }
+
+        return 0;
+    }
+};
 
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType, pg::String url,
         pg::Vector<Argument> args, pg::Vector<Argument> headers, 
-                      ContentType contentTypeEnum, pg::String& thread_result, int& response_code) 
+                      ContentType contentTypeEnum, pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code) 
 { 
     CURLcode res;
     CURL* curl;
@@ -65,6 +129,7 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
     pg::String contentType = ContentTypeToString(contentTypeEnum); 
 
     MemoryStruct chunk;
+    MemoryStruct headerChunk;
     if (reqType == GET) {
         curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
     } else {
@@ -107,6 +172,8 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void*)&headerChunk);
 
     res = curl_easy_perform(curl);
     pg::String response_body;
@@ -120,6 +187,10 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
         thread_result = pg::String("All ok");
         if(chunk.size > 0) thread_result = prettify(chunk.memory); 
     }
+
+    HttpHeaderParser parser(response_headers);
+    parser.parse(&headerChunk);
+    
     thread_status = FINISHED;
     curl_easy_cleanup(curl);
 }
@@ -128,11 +199,12 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
 void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
                       pg::String url, pg::Vector<Argument> args, pg::Vector<Argument> headers, 
                       ContentType contentTypeEnum, const pg::String& inputJson, 
-                      pg::String& thread_result, int& response_code) 
+                      pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code) 
 { 
     CURL *curl;
     CURLcode res;
     MemoryStruct chunk;
+    MemoryStruct headerChunk;
     
     pg::String contentType = ContentTypeToString(contentTypeEnum); 
 
@@ -231,6 +303,8 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
         curl_easy_setopt(curl, CURLOPT_READDATA, &wt);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void*)&headerChunk);
         curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
         if (form != NULL) {
             curl_easy_setopt(curl, CURLOPT_MIMEPOST, form);
@@ -252,6 +326,9 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
         /* always cleanup */ 
         curl_easy_cleanup(curl);
         if (form != NULL) curl_mime_free(form);
+
+        HttpHeaderParser parser(response_headers);
+        parser.parse(&headerChunk);
     }
     thread_status = FINISHED;
 }

@@ -41,6 +41,7 @@ typedef struct History {
     pg::Vector<Argument> headers;
     pg::String input_json;
     pg::String result;
+    pg::Vector<Argument> result_headers;
     RequestType req_type;
     ContentType content_type;
     pg::String process_time;
@@ -56,12 +57,12 @@ typedef struct Collection {
 
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType,  
                       pg::String url, pg::Vector<Argument> args, pg::Vector<Argument> headers, 
-                      ContentType contentType, pg::String& thread_result, int& response_code);
+                      ContentType contentType, pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code);
 
 void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
                       pg::String url, pg::Vector<Argument> args, pg::Vector<Argument> headers, 
                       ContentType contentType, const pg::String& inputJson, 
-                      pg::String& thread_result, int& response_code) ;
+                      pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code);
 
 pg::String RequestTypeToString(RequestType req);
 

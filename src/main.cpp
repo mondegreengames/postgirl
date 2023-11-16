@@ -62,12 +62,12 @@ void processRequest(std::thread& thread, const char* buf,
     switch(request_type) { 
         case GET:
         case DELETE:
-            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), (RequestType)request_type, history.back().url, history.back().args, history.back().headers, contentType, std::ref(history.back().result), std::ref(history.back().response_code));
+            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), (RequestType)request_type, history.back().url, history.back().args, history.back().headers, contentType, std::ref(history.back().result), std::ref(history.back().result_headers), std::ref(history.back().response_code));
             break;
         case POST:
         case PATCH:
         case PUT:
-            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), (RequestType)request_type, history.back().url, history.back().args, history.back().headers, contentType, history.back().input_json, std::ref(history.back().result), std::ref(history.back().response_code));
+            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), (RequestType)request_type, history.back().url, history.back().args, history.back().headers, contentType, history.back().input_json, std::ref(history.back().result), std::ref(history.back().result_headers), std::ref(history.back().response_code));
             break;
         default:
             history.back().result = pg::String("Invalid request type selected!");
@@ -443,17 +443,62 @@ int main(int argc, char* argv[])
             }
 
             ImGui::Text("Result");
-            if (collection[curr_collection].hist.size() > 0) {
-                if (selected >= collection[curr_collection].hist.size()) {
-                    selected = (int)collection[curr_collection].hist.size()-1;
+            ImGui::BeginTabBar("resulttabs");
+            if (ImGui::BeginTabItem("Body"))
+            {
+                if (collection[curr_collection].hist.size() > 0) {
+                    if (selected >= collection[curr_collection].hist.size()) {
+                        selected = (int)collection[curr_collection].hist.size()-1;
+                    }
+                    ImGui::InputTextMultiline("##source", &collection[curr_collection].hist[selected].result[0], collection[curr_collection].hist[selected].result.capacity(), ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
                 }
-                ImGui::InputTextMultiline("##source", &collection[curr_collection].hist[selected].result[0], collection[curr_collection].hist[selected].result.capacity(), ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
+                else {
+                    char blank[] = "";
+                    ImGui::InputTextMultiline("##source", blank, 0, ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
+                }
+                ImGui::EndTabItem();
             }
-            else {
-                char blank[] = "";
-                ImGui::InputTextMultiline("##source", blank, 0, ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
-            }
+            if (ImGui::BeginTabItem("Headers"))
+            {
+                if (collection[curr_collection].hist.size() > 0) {
+                    if (selected >= collection[curr_collection].hist.size()) {
+                        selected = (int)collection[curr_collection].hist.size()-1;
+                    }
 
+                    if (ImGui::BeginTable("response_headers", 2)) {
+
+                        ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Name");
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Value");
+
+                        int i = 0;
+                        for (auto itr = collection[curr_collection].hist[selected].result_headers.begin();
+                            itr != collection[curr_collection].hist[selected].result_headers.end();
+                            ++itr)
+                        {
+                            ImGui::PushID(i);
+                            ImGui::TableNextRow();
+                            ImGui::TableNextColumn();
+                            ImGui::InputText("##name", (*itr).name.buf_, (*itr).name.capacity(), ImGuiInputTextFlags_ReadOnly);
+                            ImGui::TableNextColumn();
+                            ImGui::InputText("##value", (*itr).value.buf_, (*itr).name.capacity(), ImGuiInputTextFlags_ReadOnly);
+                            ImGui::PopID();
+                        
+                            i++;
+                        }
+
+                        ImGui::EndTable();
+                    }
+                }
+                else {
+
+                }
+
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
 
             ImGui::EndChild();
         }
