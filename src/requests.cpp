@@ -117,6 +117,26 @@ private:
     }
 };
 
+pg::String buildUrl(CURL* curl, const pg::String& baseUrl, const pg::Vector<Argument>& args)
+{
+    pg::String url = baseUrl;
+
+    if (args.size() > 0) url.append("?");
+    for (int i=0; i<(int)args.size(); i++) {
+        char* escaped_name = curl_easy_escape(curl , args[i].name.buf_, args[i].name.length());
+        url.append(escaped_name);
+        url.append("=");
+        char* escaped_value = curl_easy_escape(curl , args[i].value.buf_, args[i].value.length());
+        url.append(escaped_value);
+        if (i < (int)args.size()-1) url.append("&");
+        
+        curl_free(escaped_name);
+        curl_free(escaped_value);
+    }
+
+    return url;
+}
+
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType, pg::String url,
         pg::Vector<Argument> args, pg::Vector<Argument> headers, 
                       ContentType contentTypeEnum, pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code) 
@@ -136,15 +156,7 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
     }
     
-    if (args.size() > 0) url.append("?");
-    for (int i=0; i<(int)args.size(); i++) {
-        char* escaped_name = curl_easy_escape(curl , args[i].name.buf_, args[i].name.length());
-        url.append(escaped_name);
-        url.append("=");
-        char* escaped_value = curl_easy_escape(curl , args[i].value.buf_, args[i].value.length());
-        url.append(escaped_value);
-        if (i < (int)args.size()-1) url.append("&");
-    }
+    url = buildUrl(curl, url, args);
 
     struct curl_slist *header_chunk = NULL;
     if (contentType.length() > 0) {
@@ -197,7 +209,8 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
 
 
 void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
-                      pg::String url, pg::Vector<Argument> args, pg::Vector<Argument> headers, 
+                      pg::String url, pg::Vector<Argument> query_args, pg::Vector<Argument> form_args, 
+                      pg::Vector<Argument> headers, 
                       ContentType contentTypeEnum, const pg::String& inputJson, 
                       pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code) 
 { 
@@ -208,7 +221,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
     
     pg::String contentType = ContentTypeToString(contentTypeEnum); 
 
-    if (args.size() == 0 && inputJson.length() == 0) {
+    if (form_args.size() == 0 && inputJson.length() == 0) {
         thread_result = "No argument passed for POST";
         thread_status = FINISHED;
         return;
@@ -235,39 +248,24 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
     /* get a curl handle */ 
     curl = curl_easy_init();
     if(curl) {
-        pg::Vector<int> files_idx;
-        pg::Vector<int> args_idx;
-        for (int i=0; i<args.size(); i++) {
-            if (args[i].arg_type == 1) {
-                files_idx.push_back(i);
-            } else {
-                args_idx.push_back(i);
+
+        for (int i=0; i<form_args.size(); i++) {
+            if (form_args[i].arg_type == 1)
+            {
+                if (form == NULL) {
+                    /* Create the form */ 
+                    form = curl_mime_init(curl);
+                }
+      
+                /* Fill in the file upload field */ 
+                field = curl_mime_addpart(form);
+                curl_mime_name(field, form_args[i].name.buf_);
+                curl_mime_filedata(field, form_args[i].value.buf_);
             }
         }
 
-        for (int i=0; i<files_idx.size(); i++) {
-            if (form == NULL) {
-                /* Create the form */ 
-                form = curl_mime_init(curl);
-            }
-         
-            /* Fill in the file upload field */ 
-            field = curl_mime_addpart(form);
-            curl_mime_name(field, args[files_idx[i]].name.buf_);
-            curl_mime_filedata(field, args[files_idx[i]].value.buf_);
-        }
+        url = buildUrl(curl, url, query_args);
 
-        if (args_idx.size() > 0) url.append("?");
-        for (int i=0; i<args_idx.size(); i++) {
-            int curr_idx = args_idx[i];
-            char* escaped_name = curl_easy_escape(curl , args[curr_idx].name.buf_, args[curr_idx].name.length());
-            url.append(escaped_name);
-            url.append("=");
-            char* escaped_value = curl_easy_escape(curl , args[curr_idx].value.buf_, args[curr_idx].value.length());
-            url.append(escaped_value);
-            if (i < (int)args_idx.size()-1) url.append("&");
-        }
-     
         struct curl_slist *header_chunk = NULL;
         if (contentType.length() > 0) {
             pg::String aux("Content-Type: ");

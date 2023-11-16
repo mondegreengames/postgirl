@@ -37,7 +37,8 @@ typedef struct Argument {
 
 typedef struct History {
     pg::String url;
-    pg::Vector<Argument> args;
+    pg::Vector<Argument> query_args;
+    pg::Vector<Argument> form_args;
     pg::Vector<Argument> headers;
     pg::String input_json;
     pg::String result;
@@ -60,7 +61,8 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
                       ContentType contentType, pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code);
 
 void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
-                      pg::String url, pg::Vector<Argument> args, pg::Vector<Argument> headers, 
+                      pg::String url, pg::Vector<Argument> query_args, pg::Vector<Argument> form_args,
+                      pg::Vector<Argument> headers, 
                       ContentType contentType, const pg::String& inputJson, 
                       pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code);
 

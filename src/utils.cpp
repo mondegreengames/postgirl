@@ -25,8 +25,10 @@ void printHistory(const History& hist) {
     printf("url: %s\ninput_json: %s\nresult: %s\n", hist.url.buf_, hist.input_json.buf_, hist.result.buf_);
     printf("req_type: %d\ncontent_type: %d\nresponse_code: %d\n", (int)hist.req_type, (int)hist.content_type, hist.response_code);
     printf("process_time: %s\n", hist.process_time.buf_);
-    for (int i=0; i<hist.args.size(); i++)
-        printArg(hist.args[i]);
+    for (int i=0; i<hist.query_args.size(); i++)
+        printArg(hist.query_args[i]);
+    for (int i=0; i<hist.form_args.size(); i++)
+        printArg(hist.form_args[i]);
     for (int i=0; i<hist.headers.size(); i++)
         printArg(hist.headers[i]);
     printf("----------------------------------------------------------\n\n");
@@ -104,8 +106,6 @@ pg::Vector<Collection> loadCollection(const pg::String& filename)
             hist.response_code = histories[j]["response_code"].GetInt();
             
             const rapidjson::Value& headers = histories[j]["headers"];
-            const rapidjson::Value& arguments = histories[j]["arguments"];
-
             for (rapidjson::SizeType k = 0; k < headers.Size(); k++) {
                 Argument header;
                 header.name  = pg::String(headers[k]["name"].GetString());
@@ -114,13 +114,52 @@ pg::Vector<Collection> loadCollection(const pg::String& filename)
                 hist.headers.push_back(header);
             }
 
-            for (rapidjson::SizeType k = 0; k < arguments.Size(); k++) {
-                Argument arg;
-                arg.name  = pg::String(arguments[k]["name"].GetString());
-                arg.value = pg::String(arguments[k]["value"].GetString());
-                arg.arg_type = arguments[k]["argument_type"].GetInt();
-                hist.args.push_back(arg);
+            // Parse the "arguments" collection to maintain compatibility
+            auto arguments_itr = histories[j].FindMember("arguments");
+            if (arguments_itr != histories[j].MemberEnd())
+            {
+                auto& arguments = (*arguments_itr).value;
+                for (rapidjson::SizeType k = 0; k < arguments.Size(); k++) {
+                    Argument arg;
+                    arg.name  = pg::String(arguments[k]["name"].GetString());
+                    arg.value = pg::String(arguments[k]["value"].GetString());
+                    arg.arg_type = arguments[k]["argument_type"].GetInt();
+
+                    if (arg.arg_type == 1)
+                        hist.form_args.push_back(arg);
+                    else
+                        hist.query_args.push_back(arg);
+                }
             }
+
+            auto query_arguments_itr = histories[j].FindMember("query_arguments");
+            if (query_arguments_itr != histories[j].MemberEnd())
+            {
+                auto& query_arguments = (*query_arguments_itr).value;
+                for (rapidjson::SizeType k = 0; k < query_arguments.Size(); k++) {
+                    Argument arg;
+                    arg.name  = pg::String(query_arguments[k]["name"].GetString());
+                    arg.value = pg::String(query_arguments[k]["value"].GetString());
+                    arg.arg_type = 0;
+
+                    hist.query_args.push_back(arg);
+                }
+            }
+
+            auto form_arguments_itr = histories[j].FindMember("form_arguments");
+            if (form_arguments_itr != histories[j].MemberEnd())
+            { 
+                auto& form_arguments = (*form_arguments_itr).value;
+                for (rapidjson::SizeType k = 0; k < form_arguments.Size(); k++) {
+                    Argument arg;
+                    arg.name  = pg::String(form_arguments[k]["name"].GetString());
+                    arg.value = pg::String(form_arguments[k]["value"].GetString());
+                    arg.arg_type = form_arguments[k]["argument_type"].GetInt();;
+
+                    hist.form_args.push_back(arg);
+                }
+            }
+
             // printHistory(hist);
             curr_collection.hist.push_back(hist);
         }
@@ -172,21 +211,36 @@ void saveCollection(const pg::Vector<Collection>& collection, const pg::String& 
             curr_history.AddMember("response_code", collection[i].hist[j].response_code, allocator);
 
 
-            rapidjson::Value args_array(rapidjson::kArrayType);
-            for (int k=0; k<collection[i].hist[j].args.size(); k++) {
+            rapidjson::Value query_args_array(rapidjson::kArrayType);
+            for (int k=0; k<collection[i].hist[j].query_args.size(); k++) {
                 rapidjson::Value curr_arg(rapidjson::kObjectType);
                 rapidjson::Value name_str;
-                name_str.SetString(collection[i].hist[j].args[k].name.buf_, allocator);
+                name_str.SetString(collection[i].hist[j].query_args[k].name.buf_, allocator);
                 curr_arg.AddMember("name", name_str, allocator);
 
                 rapidjson::Value value_str;
-                value_str.SetString(collection[i].hist[j].args[k].value.buf_, allocator);
+                value_str.SetString(collection[i].hist[j].query_args[k].value.buf_, allocator);
                 curr_arg.AddMember("value", value_str, allocator);
 
-                curr_arg.AddMember("argument_type", collection[i].hist[j].args[k].arg_type, allocator);
-                args_array.PushBack(curr_arg, allocator);
+                query_args_array.PushBack(curr_arg, allocator);
             }
-            curr_history.AddMember("arguments", args_array, allocator);
+            curr_history.AddMember("query_arguments", query_args_array, allocator);
+
+            rapidjson::Value form_args_array(rapidjson::kArrayType);
+            for (int k=0; k<collection[i].hist[j].form_args.size(); k++) {
+                rapidjson::Value curr_arg(rapidjson::kObjectType);
+                rapidjson::Value name_str;
+                name_str.SetString(collection[i].hist[j].form_args[k].name.buf_, allocator);
+                curr_arg.AddMember("name", name_str, allocator);
+
+                rapidjson::Value value_str;
+                value_str.SetString(collection[i].hist[j].form_args[k].value.buf_, allocator);
+                curr_arg.AddMember("value", value_str, allocator);
+
+                curr_arg.AddMember("argument_type", collection[i].hist[j].form_args[k].arg_type, allocator);
+                form_args_array.PushBack(curr_arg, allocator);
+            }
+            curr_history.AddMember("form_arguments", form_args_array, allocator);
 
             rapidjson::Value headers_array(rapidjson::kArrayType);
             for (int k=0; k<collection[i].hist[j].headers.size(); k++) {
