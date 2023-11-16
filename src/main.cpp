@@ -220,7 +220,7 @@ int main(int argc, char* argv[])
 
         {
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
-            ImGui::BeginChild("History", ImVec2(GetWindowContentRegionWidth() * 0.2f, 0), false, window_flags);
+            ImGui::BeginChild("History", ImVec2(GetWindowContentRegionWidth() * 0.2f, 0), ImGuiChildFlags_ResizeX, window_flags);
 
             ImGui::Text("History Search");
             if (ImGui::BeginMenuBar()) {
@@ -296,6 +296,7 @@ int main(int argc, char* argv[])
 
         {
             // ImGui::Begin("Postgirl");//, NULL, ImGuiWindowFlags_MenuBar );
+            ImGui::BeginGroup();
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
             ImGui::BeginChild("MainMenu", ImVec2(0, 0), false, window_flags);
 
@@ -501,6 +502,7 @@ int main(int argc, char* argv[])
             ImGui::EndTabBar();
 
             ImGui::EndChild();
+            ImGui::EndGroup();
         }
         if (picking_file) {
             ImGui::Begin("File Selector", &picking_file);
