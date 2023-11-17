@@ -55,6 +55,8 @@ typedef struct Collection {
     pg::Vector<History> hist;
 } Collection;
 
+pg::String buildUrl(const char* baseUrl, const pg::Vector<Argument>& args);
+bool deconstructUrl(const char* url, pg::Vector<Argument>& args);
 
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType,  
                       pg::String url, pg::Vector<Argument> args, pg::Vector<Argument> headers, 

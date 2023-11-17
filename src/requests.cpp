@@ -117,24 +117,101 @@ private:
     }
 };
 
-pg::String buildUrl(CURL* curl, const pg::String& baseUrl, const pg::Vector<Argument>& args)
+pg::String buildUrl(const char* baseUrl, const pg::Vector<Argument>& args)
 {
-    pg::String url = baseUrl;
-
-    if (args.size() > 0) url.append("?");
-    for (int i=0; i<(int)args.size(); i++) {
-        char* escaped_name = curl_easy_escape(curl , args[i].name.buf_, args[i].name.length());
-        url.append(escaped_name);
-        url.append("=");
-        char* escaped_value = curl_easy_escape(curl , args[i].value.buf_, args[i].value.length());
-        url.append(escaped_value);
-        if (i < (int)args.size()-1) url.append("&");
-        
-        curl_free(escaped_name);
-        curl_free(escaped_value);
+    CURLU* url = curl_url();
+    CURLUcode err = curl_url_set(url, CURLUPART_URL, baseUrl, 0);
+    if (err != CURLUE_OK)
+    {
+        curl_url_cleanup(url);
+        return baseUrl;
     }
 
-    return url;
+    // remove existing parameters
+    curl_url_set(url, CURLUPART_QUERY, NULL, 0);
+
+    pg::String buffer;
+    for (int i=0; i<(int)args.size(); i++) {
+
+        // clear
+        buffer.buf_[0] = 0;
+
+        buffer.append(args[i].name);
+        buffer.append("=");
+        buffer.append(args[i].value);
+
+        curl_url_set(url, CURLUPART_QUERY, buffer.buf_, CURLU_APPENDQUERY | CURLU_URLENCODE);
+    }
+
+    char* result;
+    err = curl_url_get(url, CURLUPART_URL, &result, 0);
+
+    buffer.buf_[0] = 0;
+    buffer.append(result);
+    curl_free(result);
+    curl_url_cleanup(url);
+
+    return buffer;
+}
+
+char* unescapeUrl(const char* input, int length)
+{
+    auto version = curl_version_info(CURLVERSION_NOW);
+    int major = (version->version_num >> 16) & 0xff;
+    int minor = (version->version_num >> 8) & 0xff;
+
+    if (major >= 7 || (major == 7 && minor >= 82))
+    {
+        return curl_easy_unescape(NULL, input, length, NULL);
+    }
+
+    return curl_unescape(input, length);
+}
+
+bool deconstructUrl(const char* url, pg::Vector<Argument>& args)
+{
+    CURLU* urlParser = curl_url();
+    CURLUcode err = curl_url_set(urlParser, CURLUPART_URL, url, 0);
+    if (err != CURLUE_OK)
+    {
+        curl_url_cleanup(urlParser);
+        return false;
+    }
+
+    char* query;
+    err = curl_url_get(urlParser, CURLUPART_QUERY, &query, 0);
+    if (err != CURLUE_OK)
+    {
+        curl_url_cleanup(urlParser);
+        return false;
+    }
+
+    // split the query string into parts
+    char* rest = query;
+    if (rest[0] == '?')
+        rest += 1;
+
+    char* token;
+    while((token = strtok_r(rest, "&", &rest)))
+    {
+        Argument arg;
+
+        char* eql = strchr(token, '=');
+        if (eql == NULL)
+            arg.name = pg::String(token); // TODO: escape
+        else
+        {
+            arg.name = pg::String(token, eql - token); // TODO: escape
+            arg.value = pg::String(eql + 1);
+        }
+
+        args.push_back(arg);
+    }
+
+    curl_free(query);
+    curl_url_cleanup(urlParser);
+
+    return true;
 }
 
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType, pg::String url,
@@ -156,7 +233,7 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
     }
     
-    url = buildUrl(curl, url, args);
+    url = buildUrl(url.buf_, args);
 
     struct curl_slist *header_chunk = NULL;
     if (contentType.length() > 0) {
@@ -264,7 +341,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
             }
         }
 
-        url = buildUrl(curl, url, query_args);
+        url = buildUrl(url.buf_, query_args);
 
         struct curl_slist *header_chunk = NULL;
         if (contentType.length() > 0) {

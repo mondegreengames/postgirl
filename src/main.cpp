@@ -168,7 +168,7 @@ int main(int argc, char* argv[])
     num_arg_types.push_back(2);
 
     bool picking_file = false;
-    bool show_history = true;
+   // bool show_history = true;
     int curr_arg_file = 0;
     
 
@@ -177,7 +177,7 @@ int main(int argc, char* argv[])
         Collection temp_col;
         collection.push_back(temp_col);
     }
-    int curr_history = 0;
+   // int curr_history = 0;
     int curr_collection = 0;
     bool update_hist_search = true; // used to init stuff on first run
     curl_global_init(CURL_GLOBAL_ALL);
@@ -216,7 +216,8 @@ int main(int argc, char* argv[])
         static pg::Vector<Argument> query_args;
         static pg::Vector<Argument> form_args;
         static pg::String input_json(1024*3200); // 32KB static string should be reasonable
-        static char url_buf[4098] = "http://localhost:5000/test_route";
+        constexpr int url_buf_capacity = 4098;
+        static char url_buf[url_buf_capacity] = "http://localhost:5000/test_route";
 
         ImGui::SetNextWindowPos(ImVec2(0,0));
         ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y));
@@ -276,7 +277,7 @@ int main(int argc, char* argv[])
             ImGui::SameLine(); Help("Live Search can be slow depending on your history size!");
 
             ImGui::BeginChild("HistoryList", ImVec2(GetWindowContentRegionWidth(), 0), false, window_flags);
-            char *fb = hist_search.buf_, *fe = hist_search.end();
+            //char *fb = hist_search.buf_, *fe = hist_search.end();
             for (int sr=0; sr<search_result.size(); sr++) {
                 int i = search_result[sr];
                 char select_name[2048];
@@ -341,6 +342,11 @@ int main(int argc, char* argv[])
                 ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget
                 processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
             }
+            if (ImGui::IsItemEdited())
+            {
+                query_args.clear();
+                deconstructUrl(url_buf, query_args);
+            }
 
             // HEADERS START HERE
             
@@ -357,18 +363,21 @@ int main(int argc, char* argv[])
             if (ImGui::BeginTabItem("Params"))
             {
                 static pg::Vector<int> delete_arg_btn;
-
+                
+                bool argsDirty = false;
                 for (int i=0; i<(int)query_args.size(); i++) {
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
                     char arg_name[32];
                     sprintf(arg_name, "Name##arg name%d", i);
                     if (ImGui::InputText(arg_name, &query_args[i].name[0], query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
                         processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                    if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                     ImGui::SameLine();
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
                     sprintf(arg_name, "Value##arg name%d", i);
                     if (ImGui::InputText(arg_name, &query_args[i].value[0], query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
                         processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                    if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                     ImGui::SameLine();
                     char btn_name[32];
                     sprintf(btn_name, "Delete##arg delete%d", i);
@@ -378,7 +387,13 @@ int main(int argc, char* argv[])
                             picking_file = false;
                         }
                         delete_arg_btn.push_back(i);
+                        argsDirty = true;
                     }
+                }
+
+                if (query_args.empty())
+                {
+                    ImGui::Text("No arguments to show");
                 }
                 
                 if (ImGui::Button("Add Argument")) {
@@ -389,6 +404,7 @@ int main(int argc, char* argv[])
                 ImGui::SameLine();
                 if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
                     query_args.clear();
+                    argsDirty = true;
                 }
 
                 // delete the args
@@ -399,10 +415,19 @@ int main(int argc, char* argv[])
                 }
                 delete_arg_btn.clear();
 
+                if (argsDirty)
+                {
+                    auto newUrl = buildUrl(url_buf, query_args);
+                    strncpy(url_buf, newUrl.buf_, url_buf_capacity);
+                    url_buf[url_buf_capacity - 1] = 0;
+                }
+
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Authorization"))
             {
+                ImGui::Text("TODO...");
+
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Headers"))
@@ -425,6 +450,11 @@ int main(int argc, char* argv[])
                     if (ImGui::Button(btn_name)) {
                         delete_arg_btn.push_back(i);
                     }
+                }
+
+                if (headers.empty())
+                {
+                    ImGui::Text("No headers to show");
                 }
                 
                 // delete headers
@@ -496,6 +526,11 @@ int main(int argc, char* argv[])
                                 }
                                 delete_arg_btn.push_back(i);
                             }
+                        }
+
+                        if (form_args.empty())
+                        {
+                            ImGui::Text("No arguments to show");
                         }
                         
                         if (ImGui::Button("Add Argument")) {
