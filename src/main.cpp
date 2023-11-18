@@ -218,14 +218,40 @@ int main(int argc, char* argv[])
         static pg::String input_json(1024*3200); // 32KB static string should be reasonable
         constexpr int url_buf_capacity = 4098;
         static char url_buf[url_buf_capacity] = "http://localhost:5000/test_route";
+        static bool prettifyCollectionsJson = true;
 
-        ImGui::SetNextWindowPos(ImVec2(0,0));
-        ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y));
-        ImGui::Begin("Postgirl", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar);
 
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::BeginMenu("Settings"))
+                {
+                    if (ImGui::MenuItem("Pretty-print collections file", NULL, prettifyCollectionsJson))
+                        prettifyCollectionsJson = !prettifyCollectionsJson;
+                    ImGui::EndMenu();
+                }
+                if (ImGui::MenuItem("Exit"))
+                {
+                    glfwSetWindowShouldClose(window, GLFW_TRUE);
+                }
+                ImGui::EndMenu();
+            }
+
+            ImGui::EndMainMenuBar();
+        }
+
+        ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(vp->WorkPos);
+        ImGui::SetNextWindowSize(vp->WorkSize);
+        ImGui::Begin("##Postgirl", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar);
+
+        ImGui::BeginChild("leftpane", ImVec2(GetWindowContentRegionWidth() * 0.2f, 0), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::BeginTabBar("historytabs");
+        if (ImGui::BeginTabItem("History"))
         {
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
-            ImGui::BeginChild("History", ImVec2(GetWindowContentRegionWidth() * 0.2f, 0), ImGuiChildFlags_ResizeX, window_flags);
+            //ImGui::BeginChild("History", , 0), ImGuiChildFlags_ResizeX, window_flags);
 
             ImGui::Text("History Search");
             if (ImGui::BeginMenuBar()) {
@@ -295,8 +321,17 @@ int main(int argc, char* argv[])
                 }
             }
             ImGui::EndChild();
-            ImGui::EndChild();
+            //ImGui::EndChild();
+
+            ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Collections"))
+        {
+            ImGui::Text("TODO");
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+        ImGui::EndChild();
 
         ImGui::SameLine();
 
@@ -355,7 +390,7 @@ int main(int argc, char* argv[])
                 thread.join();
                 thread_status = IDLE;
                 selected = (int)collection[curr_collection].hist.size()-1;
-                saveCollection(collection, "collections.json");
+                saveCollection(collection, "collections.json", prettifyCollectionsJson);
                 update_hist_search = true;
             }
 

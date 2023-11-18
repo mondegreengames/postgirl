@@ -170,7 +170,7 @@ pg::Vector<Collection> loadCollection(const pg::String& filename)
     return collection_vec;
 }
 
-void saveCollection(const pg::Vector<Collection>& collection, const pg::String& filename) 
+void saveCollection(const pg::Vector<Collection>& collection, const pg::String& filename, bool pretty) 
 {
 	rapidjson::Document document;
 	document.SetObject();
@@ -266,8 +266,17 @@ void saveCollection(const pg::Vector<Collection>& collection, const pg::String& 
     document.AddMember("collections", collection_array, allocator);
  
     rapidjson::StringBuffer strbuf;
-	rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
-	document.Accept(writer);
+
+    if (pretty)
+    {
+        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(strbuf);
+        document.Accept(writer);
+    }
+    else
+    {
+        rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+        document.Accept(writer);
+    }
 
     FILE *fp = fopen(filename.buf_, "wb");
     if (fp != NULL)
