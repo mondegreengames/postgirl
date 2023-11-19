@@ -14,6 +14,7 @@
 #include "dirent_portable.h"
 #include "requests.h"
 #include "utils.h"
+#include "settings.h"
 
 #ifdef _WINDOWS
 #include <windows.h>
@@ -133,11 +134,28 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    Settings settings;
+    Settings::Load("settings.json", settings);
+
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    ImGui::StyleColorsDark();
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (settings.Font.buf_[0] != 0)
+    {
+        io.Fonts->AddFontFromFileTTF(settings.Font.buf_, settings.FontSize == 0 ? 14 : settings.FontSize);
+    }
+    io.Fonts->AddFontDefault();
+
+    
+    if (settings.Theme == ThemeType::CLASSIC)
+        ImGui::StyleColorsClassic();
+    else if (settings.Theme == ThemeType::LIGHT)
+        ImGui::StyleColorsLight();
+    else
+        ImGui::StyleColorsDark();
+
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
@@ -170,7 +188,6 @@ int main(int argc, char* argv[])
     bool picking_file = false;
    // bool show_history = true;
     int curr_arg_file = 0;
-    
 
     pg::Vector<Collection> collection = loadCollection("collections.json");
     if (collection.size() == 0) {
@@ -218,17 +235,43 @@ int main(int argc, char* argv[])
         static pg::String input_json(1024*3200); // 32KB static string should be reasonable
         constexpr int url_buf_capacity = 4098;
         static char url_buf[url_buf_capacity] = "http://localhost:5000/test_route";
-        static bool prettifyCollectionsJson = true;
 
 
+        bool settingsDirty = false;
         if (ImGui::BeginMainMenuBar())
         {
             if (ImGui::BeginMenu("File"))
             {
                 if (ImGui::BeginMenu("Settings"))
                 {
-                    if (ImGui::MenuItem("Pretty-print collections file", NULL, prettifyCollectionsJson))
-                        prettifyCollectionsJson = !prettifyCollectionsJson;
+                    if (ImGui::MenuItem("Pretty-print collections file", NULL, settings.PrettifyCollectionsJson))
+                    {
+                        settings.PrettifyCollectionsJson = !settings.PrettifyCollectionsJson;
+                        settingsDirty = true;
+                    }
+                    if (ImGui::BeginMenu("Theme"))
+                    {
+                        if (ImGui::MenuItem("Dark", NULL, settings.Theme == ThemeType::DARK))
+                        {
+                            ImGui::StyleColorsDark();
+                            settings.Theme = ThemeType::DARK;
+                            settingsDirty = true;
+                        }
+                        if (ImGui::MenuItem("Light", NULL, settings.Theme == ThemeType::LIGHT))
+                        {
+                            ImGui::StyleColorsLight();
+                            settings.Theme = ThemeType::LIGHT;
+                            settingsDirty = true;
+                        }
+                        if (ImGui::MenuItem("Classic", NULL, settings.Theme == ThemeType::CLASSIC))
+                        {
+                            ImGui::StyleColorsClassic();
+                            settings.Theme = ThemeType::CLASSIC;
+                            settingsDirty = true;
+                        }
+
+                        ImGui::EndMenu();
+                    }
                     ImGui::EndMenu();
                 }
                 if (ImGui::MenuItem("Exit"))
@@ -240,11 +283,13 @@ int main(int argc, char* argv[])
 
             ImGui::EndMainMenuBar();
         }
+        if (settingsDirty)
+            Settings::Save("settings.json", settings);
 
         ImGuiViewport* vp = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(vp->WorkPos);
         ImGui::SetNextWindowSize(vp->WorkSize);
-        ImGui::Begin("##Postgirl", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::Begin("##Postgirl", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar);
 
         ImGui::BeginChild("leftpane", ImVec2(GetWindowContentRegionWidth() * 0.2f, 0), ImGuiChildFlags_ResizeX, ImGuiWindowFlags_HorizontalScrollbar);
         ImGui::BeginTabBar("historytabs");
@@ -390,7 +435,7 @@ int main(int argc, char* argv[])
                 thread.join();
                 thread_status = IDLE;
                 selected = (int)collection[curr_collection].hist.size()-1;
-                saveCollection(collection, "collections.json", prettifyCollectionsJson);
+                saveCollection(collection, "collections.json", settings.PrettifyCollectionsJson);
                 update_hist_search = true;
             }
 
