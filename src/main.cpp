@@ -189,13 +189,11 @@ int main(int argc, char* argv[])
    // bool show_history = true;
     int curr_arg_file = 0;
 
-    pg::Vector<Collection> collection = loadCollection("collections.json");
-    if (collection.size() == 0) {
-        Collection temp_col;
-        collection.push_back(temp_col);
+    pg::Vector<History> histories = loadHistory("history.json");
+    if (histories.size() == 0) {
+        History temp_col;
+        histories.push_back(temp_col);
     }
-   // int curr_history = 0;
-    int curr_collection = 0;
     bool update_hist_search = true; // used to init stuff on first run
     curl_global_init(CURL_GLOBAL_ALL);
 
@@ -299,15 +297,15 @@ int main(int argc, char* argv[])
             //ImGui::BeginChild("History", , 0), ImGuiChildFlags_ResizeX, window_flags);
 
             ImGui::Text("History Search");
-            if (ImGui::BeginMenuBar()) {
-                for (int i=(int)collection.size()-1; i>=0; i--) {
-                    if (ImGui::BeginMenu(collection[i].name.buf_)) {
-                        curr_collection = i;
-                        ImGui::EndMenu();
-                    }
-                }
-                ImGui::EndMenuBar();
-            }
+            // if (ImGui::BeginMenuBar()) {
+            //     for (int i=(int)histories.size()-1; i>=0; i--) {
+            //         if (ImGui::BeginMenu(histories[i].name.buf_)) {
+            //             curr_collection = i;
+            //             ImGui::EndMenu();
+            //         }
+            //     }
+            //     ImGui::EndMenuBar();
+            // }
 
             static pg::String hist_search;
             static pg::Vector<int> search_result;
@@ -321,18 +319,18 @@ int main(int argc, char* argv[])
                 search_result.clear();
                 if (hist_search.length() > 0) {
                     char *fb = hist_search.buf_, *fe = hist_search.end();
-                    for (int i=(int)collection[curr_collection].hist.size()-1; i>=0; i--) {
+                    for (int i=(int)histories.size()-1; i>=0; i--) {
                         if (hist_search.length() == 0 || (hist_search.length() > 0 &&
-                            (Stristr(collection[curr_collection].hist[i].url.buf_, collection[curr_collection].hist[i].url.end(), fb, fe) ||
-                            Stristr(collection[curr_collection].hist[i].input_json.buf_, collection[curr_collection].hist[i].input_json.end(), fb, fe) ||
-                            Stristr(collection[curr_collection].hist[i].result.buf_, collection[curr_collection].hist[i].result.end(), fb, fe))))
+                            (Stristr(histories[i].url.buf_, histories[i].url.end(), fb, fe) ||
+                            Stristr(histories[i].input_json.buf_, histories[i].input_json.end(), fb, fe) ||
+                            Stristr(histories[i].result.buf_, histories[i].result.end(), fb, fe))))
                         {
                             search_result.push_back(i);
                         }
                     }
                 }
                 else {
-                    for (int i=(int)collection[curr_collection].hist.size()-1; i>=0; i--) {
+                    for (int i=(int)histories.size()-1; i>=0; i--) {
                         search_result.push_back(i);
                     }
                 }
@@ -352,17 +350,17 @@ int main(int argc, char* argv[])
             for (int sr=0; sr<search_result.size(); sr++) {
                 int i = search_result[sr];
                 char select_name[2048];
-                sprintf(select_name, "(%s) %s##%d", request_type_str[(int)collection[curr_collection].hist[i].req_type].buf_, collection[curr_collection].hist[i].url.buf_, i);
+                sprintf(select_name, "(%s) %s##%d", request_type_str[(int)histories[i].req_type].buf_, histories[i].url.buf_, i);
                 if (ImGui::Selectable(select_name, selected==i)) {
                     selected = i;
-                    request_type = collection[curr_collection].hist[i].req_type;
-                    content_type = collection[curr_collection].hist[i].content_type;
-                    headers = collection[curr_collection].hist[i].headers;
-                    result = collection[curr_collection].hist[i].result;
-                    query_args = collection[curr_collection].hist[i].query_args;
-                    form_args = collection[curr_collection].hist[i].form_args;
-                    input_json = collection[curr_collection].hist[i].input_json;
-                    strcpy(url_buf, collection[curr_collection].hist[i].url.buf_);
+                    request_type = histories[i].req_type;
+                    content_type = histories[i].content_type;
+                    headers = histories[i].headers;
+                    result = histories[i].result;
+                    query_args = histories[i].query_args;
+                    form_args = histories[i].form_args;
+                    input_json = histories[i].input_json;
+                    strcpy(url_buf, histories[i].url.buf_);
                 }
             }
             ImGui::EndChild();
@@ -420,7 +418,7 @@ int main(int argc, char* argv[])
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
             if (ImGui::InputText("##URL", url_buf, IM_ARRAYSIZE(url_buf), ImGuiInputTextFlags_EnterReturnsTrue) ) {
                 ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget
-                processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
             }
             if (ImGui::IsItemEdited())
             {
@@ -434,8 +432,8 @@ int main(int argc, char* argv[])
             if (thread_status == FINISHED) {
                 thread.join();
                 thread_status = IDLE;
-                selected = (int)collection[curr_collection].hist.size()-1;
-                saveCollection(collection, "collections.json", settings.PrettifyCollectionsJson);
+                selected = (int)histories.size()-1;
+                saveHistory(histories, "history.json", settings.PrettifyCollectionsJson);
                 update_hist_search = true;
             }
 
@@ -450,13 +448,13 @@ int main(int argc, char* argv[])
                     char arg_name[32];
                     sprintf(arg_name, "Name##arg name%d", i);
                     if (ImGui::InputText(arg_name, &query_args[i].name[0], query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                        processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
                     if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                     ImGui::SameLine();
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
                     sprintf(arg_name, "Value##arg name%d", i);
                     if (ImGui::InputText(arg_name, &query_args[i].value[0], query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                        processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
                     if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                     ImGui::SameLine();
                     char btn_name[32];
@@ -518,12 +516,12 @@ int main(int argc, char* argv[])
                     char arg_name[32];
                     sprintf(arg_name, "Name##header arg name%d", i);
                     if (ImGui::InputText(arg_name, &headers[i].name[0], headers[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                        processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
                     ImGui::SameLine();
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
                     sprintf(arg_name, "Value##header arg value%d", i);
                     if (ImGui::InputText(arg_name, &headers[i].value[0], headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                        processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
                     ImGui::SameLine();
                     char btn_name[32];
                     sprintf(btn_name, "Delete##header arg delete%d", i);
@@ -582,12 +580,12 @@ int main(int argc, char* argv[])
                             char arg_name[32];
                             sprintf(arg_name, "Name##arg name%d", i);
                             if (ImGui::InputText(arg_name, &form_args[i].name[0], form_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                                processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                                processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
                             ImGui::SameLine();
                             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
                             sprintf(arg_name, "Value##arg name%d", i);
                             if (ImGui::InputText(arg_name, &form_args[i].value[0], form_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                                processRequest(thread, url_buf, collection[curr_collection].hist, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                                processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
                             ImGui::SameLine();
                             if (form_args[i].arg_type == 1) {
                                 sprintf(arg_name, "File##arg name%d", i);
@@ -642,11 +640,11 @@ int main(int argc, char* argv[])
             ImGui::BeginTabBar("resulttabs");
             if (ImGui::BeginTabItem("Body"))
             {
-                if (collection[curr_collection].hist.size() > 0) {
-                    if (selected >= collection[curr_collection].hist.size()) {
-                        selected = (int)collection[curr_collection].hist.size()-1;
+                if (histories.size() > 0) {
+                    if (selected >= histories.size()) {
+                        selected = (int)histories.size()-1;
                     }
-                    ImGui::InputTextMultiline("##source", &collection[curr_collection].hist[selected].result[0], collection[curr_collection].hist[selected].result.capacity(), ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
+                    ImGui::InputTextMultiline("##source", &histories[selected].result[0], histories[selected].result.capacity(), ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
                 }
                 else {
                     char blank[] = "";
@@ -656,9 +654,9 @@ int main(int argc, char* argv[])
             }
             if (ImGui::BeginTabItem("Headers"))
             {
-                if (collection[curr_collection].hist.size() > 0) {
-                    if (selected >= collection[curr_collection].hist.size()) {
-                        selected = (int)collection[curr_collection].hist.size()-1;
+                if (histories.size() > 0) {
+                    if (selected >= histories.size()) {
+                        selected = (int)histories.size()-1;
                     }
 
                     if (ImGui::BeginTable("response_headers", 2)) {
@@ -670,8 +668,8 @@ int main(int argc, char* argv[])
                         ImGui::Text("Value");
 
                         int i = 0;
-                        for (auto itr = collection[curr_collection].hist[selected].result_headers.begin();
-                            itr != collection[curr_collection].hist[selected].result_headers.end();
+                        for (auto itr = histories[selected].result_headers.begin();
+                            itr != histories[selected].result_headers.end();
                             ++itr)
                         {
                             ImGui::PushID(i);

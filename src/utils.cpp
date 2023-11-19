@@ -76,194 +76,178 @@ char* readFile(char *filename)
 }
 
 
-pg::Vector<Collection> loadCollection(const pg::String& filename) 
+pg::Vector<History> loadHistory(const pg::String& filename) 
 {
-    pg::Vector<Collection> collection_vec;
+    pg::Vector<History> history_vec;
     rapidjson::Document document;
     char* json = readFile(filename.buf_);
     if (json == NULL || document.Parse(json).HasParseError()) {
-        return collection_vec;
+        return history_vec;
     }
     document.Parse(json);
-    if (document.HasMember("collections") == false) {
+    if (document.HasMember("histories") == false) {
         free(json);
-        return collection_vec;
+        return history_vec;
     }
 
-    const rapidjson::Value& collections = document["collections"];
-    for (rapidjson::SizeType i = 0; i < collections.Size(); i++) { 
-        Collection curr_collection;
-        curr_collection.name = pg::String(collections[i]["name"].GetString());
-        const rapidjson::Value& histories = collections[i]["histories"];
-        for (rapidjson::SizeType j = 0; j < histories.Size(); j++) {
-            History hist;
-            hist.url = pg::String(histories[j]["url"].GetString());
-            hist.input_json = pg::String(histories[j]["input_json"].GetString());
-            hist.req_type = (RequestType)histories[j]["request_type"].GetInt();
-            hist.content_type = (ContentType)histories[j]["content_type"].GetInt();
-            hist.process_time = pg::String(histories[j]["process_time"].GetString());
-            hist.result = prettify(pg::String(histories[j]["result"].GetString()));
-            hist.response_code = histories[j]["response_code"].GetInt();
-            
-            const rapidjson::Value& headers = histories[j]["headers"];
-            for (rapidjson::SizeType k = 0; k < headers.Size(); k++) {
-                Argument header;
-                header.name  = pg::String(headers[k]["name"].GetString());
-                header.value = pg::String(headers[k]["value"].GetString());
-                header.arg_type = headers[k]["argument_type"].GetInt();
-                hist.headers.push_back(header);
-            }
+    const rapidjson::Value& histories = document["histories"];
 
-            // Parse the "arguments" collection to maintain compatibility
-            auto arguments_itr = histories[j].FindMember("arguments");
-            if (arguments_itr != histories[j].MemberEnd())
-            {
-                auto& arguments = (*arguments_itr).value;
-                for (rapidjson::SizeType k = 0; k < arguments.Size(); k++) {
-                    Argument arg;
-                    arg.name  = pg::String(arguments[k]["name"].GetString());
-                    arg.value = pg::String(arguments[k]["value"].GetString());
-                    arg.arg_type = arguments[k]["argument_type"].GetInt();
-
-                    if (arg.arg_type == 1)
-                        hist.form_args.push_back(arg);
-                    else
-                        hist.query_args.push_back(arg);
-                }
-            }
-
-            auto query_arguments_itr = histories[j].FindMember("query_arguments");
-            if (query_arguments_itr != histories[j].MemberEnd())
-            {
-                auto& query_arguments = (*query_arguments_itr).value;
-                for (rapidjson::SizeType k = 0; k < query_arguments.Size(); k++) {
-                    Argument arg;
-                    arg.name  = pg::String(query_arguments[k]["name"].GetString());
-                    arg.value = pg::String(query_arguments[k]["value"].GetString());
-                    arg.arg_type = 0;
-
-                    hist.query_args.push_back(arg);
-                }
-            }
-
-            auto form_arguments_itr = histories[j].FindMember("form_arguments");
-            if (form_arguments_itr != histories[j].MemberEnd())
-            { 
-                auto& form_arguments = (*form_arguments_itr).value;
-                for (rapidjson::SizeType k = 0; k < form_arguments.Size(); k++) {
-                    Argument arg;
-                    arg.name  = pg::String(form_arguments[k]["name"].GetString());
-                    arg.value = pg::String(form_arguments[k]["value"].GetString());
-                    arg.arg_type = form_arguments[k]["argument_type"].GetInt();;
-
-                    hist.form_args.push_back(arg);
-                }
-            }
-
-            // printHistory(hist);
-            curr_collection.hist.push_back(hist);
+    for (rapidjson::SizeType j = 0; j < histories.Size(); j++) {
+        History hist;
+        hist.url = pg::String(histories[j]["url"].GetString());
+        hist.input_json = pg::String(histories[j]["input_json"].GetString());
+        hist.req_type = (RequestType)histories[j]["request_type"].GetInt();
+        hist.content_type = (ContentType)histories[j]["content_type"].GetInt();
+        hist.process_time = pg::String(histories[j]["process_time"].GetString());
+        hist.result = prettify(pg::String(histories[j]["result"].GetString()));
+        hist.response_code = histories[j]["response_code"].GetInt();
+        
+        const rapidjson::Value& headers = histories[j]["headers"];
+        for (rapidjson::SizeType k = 0; k < headers.Size(); k++) {
+            Argument header;
+            header.name  = pg::String(headers[k]["name"].GetString());
+            header.value = pg::String(headers[k]["value"].GetString());
+            header.arg_type = headers[k]["argument_type"].GetInt();
+            hist.headers.push_back(header);
         }
-        collection_vec.push_back(curr_collection);
-    }
 
+        // Parse the "arguments" collection to maintain compatibility
+        auto arguments_itr = histories[j].FindMember("arguments");
+        if (arguments_itr != histories[j].MemberEnd())
+        {
+            auto& arguments = (*arguments_itr).value;
+            for (rapidjson::SizeType k = 0; k < arguments.Size(); k++) {
+                Argument arg;
+                arg.name  = pg::String(arguments[k]["name"].GetString());
+                arg.value = pg::String(arguments[k]["value"].GetString());
+                arg.arg_type = arguments[k]["argument_type"].GetInt();
+
+                if (arg.arg_type == 1)
+                    hist.form_args.push_back(arg);
+                else
+                    hist.query_args.push_back(arg);
+            }
+        }
+
+        auto query_arguments_itr = histories[j].FindMember("query_arguments");
+        if (query_arguments_itr != histories[j].MemberEnd())
+        {
+            auto& query_arguments = (*query_arguments_itr).value;
+            for (rapidjson::SizeType k = 0; k < query_arguments.Size(); k++) {
+                Argument arg;
+                arg.name  = pg::String(query_arguments[k]["name"].GetString());
+                arg.value = pg::String(query_arguments[k]["value"].GetString());
+                arg.arg_type = 0;
+
+                hist.query_args.push_back(arg);
+            }
+        }
+
+        auto form_arguments_itr = histories[j].FindMember("form_arguments");
+        if (form_arguments_itr != histories[j].MemberEnd())
+        { 
+            auto& form_arguments = (*form_arguments_itr).value;
+            for (rapidjson::SizeType k = 0; k < form_arguments.Size(); k++) {
+                Argument arg;
+                arg.name  = pg::String(form_arguments[k]["name"].GetString());
+                arg.value = pg::String(form_arguments[k]["value"].GetString());
+                arg.arg_type = form_arguments[k]["argument_type"].GetInt();;
+
+                hist.form_args.push_back(arg);
+            }
+        }
+
+        // printHistory(hist);
+        history_vec.push_back(hist);
+    }
+    
     free(json);
-    return collection_vec;
+    return history_vec;
 }
 
-void saveCollection(const pg::Vector<Collection>& collection, const pg::String& filename, bool pretty) 
+void saveHistory(const pg::Vector<History>& histories, const pg::String& filename, bool pretty) 
 {
 	rapidjson::Document document;
 	document.SetObject();
-	rapidjson::Value collection_array(rapidjson::kArrayType);
+	rapidjson::Value history_array(rapidjson::kArrayType);
  
 	// must pass an allocator when the object may need to allocate memory
 	rapidjson::Document::AllocatorType& allocator = document.GetAllocator();
 
-    for (int i=0; i<collection.size(); i++) {
-        rapidjson::Value curr_collection(rapidjson::kObjectType);
-        rapidjson::Value name_str;
-        name_str.SetString(collection[i].name.buf_, allocator);
-        curr_collection.AddMember("name", name_str, allocator);
+    for (int i=0; i<histories.size(); i++) {
+        rapidjson::Value curr_history(rapidjson::kObjectType);
+        rapidjson::Value url_str;
+        url_str.SetString(histories[i].url.buf_, allocator);
+        curr_history.AddMember("url", url_str, allocator);
+        
+        rapidjson::Value input_json_str;
+        input_json_str.SetString(histories[i].input_json.buf_, allocator);
+        curr_history.AddMember("input_json", input_json_str, allocator);
+
+        curr_history.AddMember("request_type", histories[i].req_type, allocator);
+        curr_history.AddMember("content_type", histories[i].content_type, allocator);
+        
+        rapidjson::Value process_time_str;
+        process_time_str.SetString(histories[i].process_time.buf_, allocator);
+        curr_history.AddMember("process_time", process_time_str, allocator);
+        
+        rapidjson::Value result_str;
+        result_str.SetString(histories[i].result.buf_, allocator);
+        curr_history.AddMember("result", result_str, allocator);
+        
+        curr_history.AddMember("response_code", histories[i].response_code, allocator);
 
 
-        rapidjson::Value history_array(rapidjson::kArrayType);
-        for (int j=0; j<collection[i].hist.size(); j++) {
-            rapidjson::Value curr_history(rapidjson::kObjectType);
-            rapidjson::Value url_str;
-            url_str.SetString(collection[i].hist[j].url.buf_, allocator);
-            curr_history.AddMember("url", url_str, allocator);
-            
-            rapidjson::Value input_json_str;
-            input_json_str.SetString(collection[i].hist[j].input_json.buf_, allocator);
-            curr_history.AddMember("input_json", input_json_str, allocator);
+        rapidjson::Value query_args_array(rapidjson::kArrayType);
+        for (int k=0; k<histories[i].query_args.size(); k++) {
+            rapidjson::Value curr_arg(rapidjson::kObjectType);
+            rapidjson::Value name_str;
+            name_str.SetString(histories[i].query_args[k].name.buf_, allocator);
+            curr_arg.AddMember("name", name_str, allocator);
 
-            curr_history.AddMember("request_type", collection[i].hist[j].req_type, allocator);
-            curr_history.AddMember("content_type", collection[i].hist[j].content_type, allocator);
-            
-            rapidjson::Value process_time_str;
-            process_time_str.SetString(collection[i].hist[j].process_time.buf_, allocator);
-            curr_history.AddMember("process_time", process_time_str, allocator);
-            
-            rapidjson::Value result_str;
-            result_str.SetString(collection[i].hist[j].result.buf_, allocator);
-            curr_history.AddMember("result", result_str, allocator);
-            
-            curr_history.AddMember("response_code", collection[i].hist[j].response_code, allocator);
+            rapidjson::Value value_str;
+            value_str.SetString(histories[i].query_args[k].value.buf_, allocator);
+            curr_arg.AddMember("value", value_str, allocator);
 
-
-            rapidjson::Value query_args_array(rapidjson::kArrayType);
-            for (int k=0; k<collection[i].hist[j].query_args.size(); k++) {
-                rapidjson::Value curr_arg(rapidjson::kObjectType);
-                rapidjson::Value name_str;
-                name_str.SetString(collection[i].hist[j].query_args[k].name.buf_, allocator);
-                curr_arg.AddMember("name", name_str, allocator);
-
-                rapidjson::Value value_str;
-                value_str.SetString(collection[i].hist[j].query_args[k].value.buf_, allocator);
-                curr_arg.AddMember("value", value_str, allocator);
-
-                query_args_array.PushBack(curr_arg, allocator);
-            }
-            curr_history.AddMember("query_arguments", query_args_array, allocator);
-
-            rapidjson::Value form_args_array(rapidjson::kArrayType);
-            for (int k=0; k<collection[i].hist[j].form_args.size(); k++) {
-                rapidjson::Value curr_arg(rapidjson::kObjectType);
-                rapidjson::Value name_str;
-                name_str.SetString(collection[i].hist[j].form_args[k].name.buf_, allocator);
-                curr_arg.AddMember("name", name_str, allocator);
-
-                rapidjson::Value value_str;
-                value_str.SetString(collection[i].hist[j].form_args[k].value.buf_, allocator);
-                curr_arg.AddMember("value", value_str, allocator);
-
-                curr_arg.AddMember("argument_type", collection[i].hist[j].form_args[k].arg_type, allocator);
-                form_args_array.PushBack(curr_arg, allocator);
-            }
-            curr_history.AddMember("form_arguments", form_args_array, allocator);
-
-            rapidjson::Value headers_array(rapidjson::kArrayType);
-            for (int k=0; k<collection[i].hist[j].headers.size(); k++) {
-                rapidjson::Value curr_header(rapidjson::kObjectType);
-                rapidjson::Value name_str;
-                name_str.SetString(collection[i].hist[j].headers[k].name.buf_, allocator);
-                curr_header.AddMember("name", name_str, allocator);
-
-                rapidjson::Value value_str;
-                value_str.SetString(collection[i].hist[j].headers[k].value.buf_, allocator);
-                curr_header.AddMember("value", value_str, allocator);
-
-                curr_header.AddMember("argument_type", collection[i].hist[j].headers[k].arg_type, allocator);
-                headers_array.PushBack(curr_header, allocator);
-            }
-            curr_history.AddMember("headers", headers_array, allocator);
-
-            history_array.PushBack(curr_history, allocator);
+            query_args_array.PushBack(curr_arg, allocator);
         }
-        curr_collection.AddMember("histories", history_array, allocator);
-        collection_array.PushBack(curr_collection, allocator);
+        curr_history.AddMember("query_arguments", query_args_array, allocator);
+
+        rapidjson::Value form_args_array(rapidjson::kArrayType);
+        for (int k=0; k<histories[i].form_args.size(); k++) {
+            rapidjson::Value curr_arg(rapidjson::kObjectType);
+            rapidjson::Value name_str;
+            name_str.SetString(histories[i].form_args[k].name.buf_, allocator);
+            curr_arg.AddMember("name", name_str, allocator);
+
+            rapidjson::Value value_str;
+            value_str.SetString(histories[i].form_args[k].value.buf_, allocator);
+            curr_arg.AddMember("value", value_str, allocator);
+
+            curr_arg.AddMember("argument_type", histories[i].form_args[k].arg_type, allocator);
+            form_args_array.PushBack(curr_arg, allocator);
+        }
+        curr_history.AddMember("form_arguments", form_args_array, allocator);
+
+        rapidjson::Value headers_array(rapidjson::kArrayType);
+        for (int k=0; k<histories[i].headers.size(); k++) {
+            rapidjson::Value curr_header(rapidjson::kObjectType);
+            rapidjson::Value name_str;
+            name_str.SetString(histories[i].headers[k].name.buf_, allocator);
+            curr_header.AddMember("name", name_str, allocator);
+
+            rapidjson::Value value_str;
+            value_str.SetString(histories[i].headers[k].value.buf_, allocator);
+            curr_header.AddMember("value", value_str, allocator);
+
+            curr_header.AddMember("argument_type", histories[i].headers[k].arg_type, allocator);
+            headers_array.PushBack(curr_header, allocator);
+        }
+        curr_history.AddMember("headers", headers_array, allocator);
+
+        history_array.PushBack(curr_history, allocator);
     }
-    document.AddMember("collections", collection_array, allocator);
+    document.AddMember("histories", history_array, allocator);
  
     rapidjson::StringBuffer strbuf;
 

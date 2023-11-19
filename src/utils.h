@@ -18,9 +18,9 @@ void printHistory(const History& hist);
 
 History readHistory(FILE* fid);
 
-pg::Vector<Collection> loadCollection(const pg::String& filename);
+pg::Vector<History> loadHistory(const pg::String& filename);
 
-void saveCollection(const pg::Vector<Collection>& collection, const pg::String& filename, bool pretty);
+void saveHistory(const pg::Vector<History>& histories, const pg::String& filename, bool pretty);
 
 const char* Stristr(const char* haystack, const char* haystack_end, const char* needle, const char* needle_end);
 

@@ -47,13 +47,13 @@ typedef struct History {
     ContentType content_type;
     pg::String process_time;
     int response_code;
+
+    History()
+        : req_type(GET), content_type(MULTIPART_FORMDATA), response_code(0)
+    {
+    }
 } History;
 
-
-typedef struct Collection {
-    pg::String name;
-    pg::Vector<History> hist;
-} Collection;
 
 pg::String buildUrl(const char* baseUrl, const pg::Vector<Argument>& args);
 bool deconstructUrl(const char* url, pg::Vector<Argument>& args);
