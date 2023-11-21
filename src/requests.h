@@ -1,6 +1,7 @@
 #pragma once 
 
 #include <atomic>
+#include <chrono>
 #include <curl/curl.h>
 #include "pgstring.h"
 #include "pgvector.h"
@@ -34,24 +35,39 @@ typedef struct Argument {
     int arg_type; // TODO: transform this to an ENUM soon!!!!
 } Argument; 
 
-
-typedef struct History {
+typedef struct Request
+{
     pg::String url;
     pg::Vector<Argument> query_args;
     pg::Vector<Argument> form_args;
     pg::Vector<Argument> headers;
     pg::String input_json;
-    pg::String result;
-    pg::Vector<Argument> result_headers;
     RequestType req_type;
     ContentType content_type;
-    pg::String process_time;
+    uint64_t timestamp;
+
+    Request()
+        : req_type(GET), content_type(MULTIPART_FORMDATA), timestamp(0)
+    {}
+
+} Request;
+
+typedef struct Response
+{
+    pg::String result;
+    pg::Vector<Argument> result_headers;
+    uint64_t timestamp;
     int response_code;
 
-    History()
-        : req_type(GET), content_type(MULTIPART_FORMDATA), response_code(0)
+    Response()
+        : timestamp(0), response_code(0)
     {
     }
+} Response;
+
+typedef struct History {
+    Request request;
+    Response response;
 } History;
 
 

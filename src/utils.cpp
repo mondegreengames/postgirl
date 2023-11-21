@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "platform.h"
 
 void readIntFromIni(int& res, FILE* fid) {
     if (fscanf(fid, "\%*s %d", &res) != 1) {
@@ -22,15 +23,19 @@ void printArg(const Argument& arg) {
 }
 
 void printHistory(const History& hist) {
-    printf("url: %s\ninput_json: %s\nresult: %s\n", hist.url.buf_, hist.input_json.buf_, hist.result.buf_);
-    printf("req_type: %d\ncontent_type: %d\nresponse_code: %d\n", (int)hist.req_type, (int)hist.content_type, hist.response_code);
-    printf("process_time: %s\n", hist.process_time.buf_);
-    for (int i=0; i<hist.query_args.size(); i++)
-        printArg(hist.query_args[i]);
-    for (int i=0; i<hist.form_args.size(); i++)
-        printArg(hist.form_args[i]);
-    for (int i=0; i<hist.headers.size(); i++)
-        printArg(hist.headers[i]);
+    printf("url: %s\ninput_json: %s\nresult: %s\n", hist.request.url.buf_, hist.request.input_json.buf_, hist.response.result.buf_);
+    printf("req_type: %d\ncontent_type: %d\nresponse_code: %d\n", (int)hist.request.req_type, (int)hist.request.content_type, hist.response.response_code);
+    
+    char date_buf[128];
+    Platform::timestampToIsoString(hist.request.timestamp, date_buf, sizeof(date_buf));
+    printf("process_time: %s\n", date_buf);
+
+    for (int i=0; i<hist.request.query_args.size(); i++)
+        printArg(hist.request.query_args[i]);
+    for (int i=0; i<hist.request.form_args.size(); i++)
+        printArg(hist.request.form_args[i]);
+    for (int i=0; i<hist.request.headers.size(); i++)
+        printArg(hist.request.headers[i]);
     printf("----------------------------------------------------------\n\n");
 }
 
@@ -93,14 +98,15 @@ pg::Vector<History> loadHistory(const pg::String& filename)
     const rapidjson::Value& histories = document["histories"];
 
     for (rapidjson::SizeType j = 0; j < histories.Size(); j++) {
+        
         History hist;
-        hist.url = pg::String(histories[j]["url"].GetString());
-        hist.input_json = pg::String(histories[j]["input_json"].GetString());
-        hist.req_type = (RequestType)histories[j]["request_type"].GetInt();
-        hist.content_type = (ContentType)histories[j]["content_type"].GetInt();
-        hist.process_time = pg::String(histories[j]["process_time"].GetString());
-        hist.result = prettify(pg::String(histories[j]["result"].GetString()));
-        hist.response_code = histories[j]["response_code"].GetInt();
+        hist.request.url = pg::String(histories[j]["url"].GetString());
+        hist.request.input_json = pg::String(histories[j]["input_json"].GetString());
+        hist.request.req_type = (RequestType)histories[j]["request_type"].GetInt();
+        hist.request.content_type = (ContentType)histories[j]["content_type"].GetInt();
+        Platform::isoStringToTimestamp(histories[j]["process_time"].GetString(), &hist.request.timestamp);
+        hist.response.result = prettify(pg::String(histories[j]["result"].GetString()));
+        hist.response.response_code = histories[j]["response_code"].GetInt();
         
         const rapidjson::Value& headers = histories[j]["headers"];
         for (rapidjson::SizeType k = 0; k < headers.Size(); k++) {
@@ -108,7 +114,7 @@ pg::Vector<History> loadHistory(const pg::String& filename)
             header.name  = pg::String(headers[k]["name"].GetString());
             header.value = pg::String(headers[k]["value"].GetString());
             header.arg_type = headers[k]["argument_type"].GetInt();
-            hist.headers.push_back(header);
+            hist.request.headers.push_back(header);
         }
 
         // Parse the "arguments" collection to maintain compatibility
@@ -123,9 +129,9 @@ pg::Vector<History> loadHistory(const pg::String& filename)
                 arg.arg_type = arguments[k]["argument_type"].GetInt();
 
                 if (arg.arg_type == 1)
-                    hist.form_args.push_back(arg);
+                    hist.request.form_args.push_back(arg);
                 else
-                    hist.query_args.push_back(arg);
+                    hist.request.query_args.push_back(arg);
             }
         }
 
@@ -139,7 +145,7 @@ pg::Vector<History> loadHistory(const pg::String& filename)
                 arg.value = pg::String(query_arguments[k]["value"].GetString());
                 arg.arg_type = 0;
 
-                hist.query_args.push_back(arg);
+                hist.request.query_args.push_back(arg);
             }
         }
 
@@ -153,7 +159,7 @@ pg::Vector<History> loadHistory(const pg::String& filename)
                 arg.value = pg::String(form_arguments[k]["value"].GetString());
                 arg.arg_type = form_arguments[k]["argument_type"].GetInt();;
 
-                hist.form_args.push_back(arg);
+                hist.request.form_args.push_back(arg);
             }
         }
 
@@ -177,36 +183,38 @@ void saveHistory(const pg::Vector<History>& histories, const pg::String& filenam
     for (int i=0; i<histories.size(); i++) {
         rapidjson::Value curr_history(rapidjson::kObjectType);
         rapidjson::Value url_str;
-        url_str.SetString(histories[i].url.buf_, allocator);
+        url_str.SetString(histories[i].request.url.buf_, allocator);
         curr_history.AddMember("url", url_str, allocator);
         
         rapidjson::Value input_json_str;
-        input_json_str.SetString(histories[i].input_json.buf_, allocator);
+        input_json_str.SetString(histories[i].request.input_json.buf_, allocator);
         curr_history.AddMember("input_json", input_json_str, allocator);
 
-        curr_history.AddMember("request_type", histories[i].req_type, allocator);
-        curr_history.AddMember("content_type", histories[i].content_type, allocator);
+        curr_history.AddMember("request_type", histories[i].request.req_type, allocator);
+        curr_history.AddMember("content_type", histories[i].request.content_type, allocator);
         
         rapidjson::Value process_time_str;
-        process_time_str.SetString(histories[i].process_time.buf_, allocator);
+        char buffer[128];
+        Platform::timestampToIsoString(histories[i].request.timestamp, buffer, sizeof(buffer));
+        process_time_str.SetString(buffer, allocator);
         curr_history.AddMember("process_time", process_time_str, allocator);
         
         rapidjson::Value result_str;
-        result_str.SetString(histories[i].result.buf_, allocator);
+        result_str.SetString(histories[i].response.result.buf_, allocator);
         curr_history.AddMember("result", result_str, allocator);
         
-        curr_history.AddMember("response_code", histories[i].response_code, allocator);
+        curr_history.AddMember("response_code", histories[i].response.response_code, allocator);
 
 
         rapidjson::Value query_args_array(rapidjson::kArrayType);
-        for (int k=0; k<histories[i].query_args.size(); k++) {
+        for (int k=0; k<histories[i].request.query_args.size(); k++) {
             rapidjson::Value curr_arg(rapidjson::kObjectType);
             rapidjson::Value name_str;
-            name_str.SetString(histories[i].query_args[k].name.buf_, allocator);
+            name_str.SetString(histories[i].request.query_args[k].name.buf_, allocator);
             curr_arg.AddMember("name", name_str, allocator);
 
             rapidjson::Value value_str;
-            value_str.SetString(histories[i].query_args[k].value.buf_, allocator);
+            value_str.SetString(histories[i].request.query_args[k].value.buf_, allocator);
             curr_arg.AddMember("value", value_str, allocator);
 
             query_args_array.PushBack(curr_arg, allocator);
@@ -214,33 +222,33 @@ void saveHistory(const pg::Vector<History>& histories, const pg::String& filenam
         curr_history.AddMember("query_arguments", query_args_array, allocator);
 
         rapidjson::Value form_args_array(rapidjson::kArrayType);
-        for (int k=0; k<histories[i].form_args.size(); k++) {
+        for (int k=0; k<histories[i].request.form_args.size(); k++) {
             rapidjson::Value curr_arg(rapidjson::kObjectType);
             rapidjson::Value name_str;
-            name_str.SetString(histories[i].form_args[k].name.buf_, allocator);
+            name_str.SetString(histories[i].request.form_args[k].name.buf_, allocator);
             curr_arg.AddMember("name", name_str, allocator);
 
             rapidjson::Value value_str;
-            value_str.SetString(histories[i].form_args[k].value.buf_, allocator);
+            value_str.SetString(histories[i].request.form_args[k].value.buf_, allocator);
             curr_arg.AddMember("value", value_str, allocator);
 
-            curr_arg.AddMember("argument_type", histories[i].form_args[k].arg_type, allocator);
+            curr_arg.AddMember("argument_type", histories[i].request.form_args[k].arg_type, allocator);
             form_args_array.PushBack(curr_arg, allocator);
         }
         curr_history.AddMember("form_arguments", form_args_array, allocator);
 
         rapidjson::Value headers_array(rapidjson::kArrayType);
-        for (int k=0; k<histories[i].headers.size(); k++) {
+        for (int k=0; k<histories[i].request.headers.size(); k++) {
             rapidjson::Value curr_header(rapidjson::kObjectType);
             rapidjson::Value name_str;
-            name_str.SetString(histories[i].headers[k].name.buf_, allocator);
+            name_str.SetString(histories[i].request.headers[k].name.buf_, allocator);
             curr_header.AddMember("name", name_str, allocator);
 
             rapidjson::Value value_str;
-            value_str.SetString(histories[i].headers[k].value.buf_, allocator);
+            value_str.SetString(histories[i].request.headers[k].value.buf_, allocator);
             curr_header.AddMember("value", value_str, allocator);
 
-            curr_header.AddMember("argument_type", histories[i].headers[k].arg_type, allocator);
+            curr_header.AddMember("argument_type", histories[i].request.headers[k].arg_type, allocator);
             headers_array.PushBack(curr_header, allocator);
         }
         curr_history.AddMember("headers", headers_array, allocator);

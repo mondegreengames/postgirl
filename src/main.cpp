@@ -15,6 +15,7 @@
 #include "requests.h"
 #include "utils.h"
 #include "settings.h"
+#include "platform.h"
 
 #ifdef _WINDOWS
 #include <windows.h>
@@ -39,23 +40,17 @@ void processRequest(std::thread& thread, const char* buf,
     if (thread_status != IDLE)
         return;
     History hist;
-    hist.url = pg::String(buf);
-    hist.query_args = query_args;
-    hist.form_args = form_args;
-    hist.headers = headers;
-    hist.input_json = inputJson;
+    hist.request.url = pg::String(buf);
+    hist.request.query_args = query_args;
+    hist.request.form_args = form_args;
+    hist.request.headers = headers;
+    hist.request.input_json = inputJson;
     if (request_type == GET || request_type == DELETE || contentType != APPLICATION_JSON)
-        hist.input_json = pg::String("");
-    hist.result = pg::String("Processing");
-    hist.content_type = contentType;
-    hist.req_type = (RequestType)request_type;
-    time_t t = time(NULL);
-    struct tm* ptm = gmtime(&t);
-    char date_buf[128];
-    if (strftime(date_buf, 128, "%B %d, %Y; %H:%M:%S\n", ptm) != 0)
-        hist.process_time = pg::String(date_buf);
-    else
-        hist.process_time = pg::String("");
+        hist.request.input_json = pg::String("");
+    hist.response.result = pg::String("Processing");
+    hist.request.content_type = contentType;
+    hist.request.req_type = (RequestType)request_type;
+    hist.request.timestamp = Platform::getUtcTimestampNow();
     history.push_back(hist);
     // points to the current (and unfinished) request
     selected = (int)history.size()-1;
@@ -66,15 +61,15 @@ void processRequest(std::thread& thread, const char* buf,
     switch(request_type) { 
         case GET:
         case DELETE:
-            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), (RequestType)request_type, new_history.url, new_history.query_args, new_history.headers, contentType, std::ref(new_history.result), std::ref(new_history.result_headers), std::ref(new_history.response_code));
+            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), (RequestType)request_type, new_history.request.url, new_history.request.query_args, new_history.request.headers, contentType, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
             break;
         case POST:
         case PATCH:
         case PUT:
-            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), (RequestType)request_type, new_history.url, new_history.query_args, new_history.form_args, new_history.headers, contentType, new_history.input_json, std::ref(new_history.result), std::ref(new_history.result_headers), std::ref(new_history.response_code));
+            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), (RequestType)request_type, new_history.request.url, new_history.request.query_args, new_history.request.form_args, new_history.request.headers, contentType, new_history.request.input_json, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
             break;
         default:
-            history.back().result = pg::String("Invalid request type selected!");
+            history.back().response.result = pg::String("Invalid request type selected!");
             thread_status = FINISHED;
     }
 }
@@ -321,9 +316,9 @@ int main(int argc, char* argv[])
                     char *fb = hist_search.buf_, *fe = hist_search.end();
                     for (int i=(int)histories.size()-1; i>=0; i--) {
                         if (hist_search.length() == 0 || (hist_search.length() > 0 &&
-                            (Stristr(histories[i].url.buf_, histories[i].url.end(), fb, fe) ||
-                            Stristr(histories[i].input_json.buf_, histories[i].input_json.end(), fb, fe) ||
-                            Stristr(histories[i].result.buf_, histories[i].result.end(), fb, fe))))
+                            (Stristr(histories[i].request.url.buf_, histories[i].request.url.end(), fb, fe) ||
+                            Stristr(histories[i].request.input_json.buf_, histories[i].request.input_json.end(), fb, fe) ||
+                            Stristr(histories[i].response.result.buf_, histories[i].response.result.end(), fb, fe))))
                         {
                             search_result.push_back(i);
                         }
@@ -350,17 +345,17 @@ int main(int argc, char* argv[])
             for (int sr=0; sr<search_result.size(); sr++) {
                 int i = search_result[sr];
                 char select_name[2048];
-                sprintf(select_name, "(%s) %s##%d", request_type_str[(int)histories[i].req_type].buf_, histories[i].url.buf_, i);
+                sprintf(select_name, "(%s) %s##%d", request_type_str[(int)histories[i].request.req_type].buf_, histories[i].request.url.buf_, i);
                 if (ImGui::Selectable(select_name, selected==i)) {
                     selected = i;
-                    request_type = histories[i].req_type;
-                    content_type = histories[i].content_type;
-                    headers = histories[i].headers;
-                    result = histories[i].result;
-                    query_args = histories[i].query_args;
-                    form_args = histories[i].form_args;
-                    input_json = histories[i].input_json;
-                    strcpy(url_buf, histories[i].url.buf_);
+                    request_type = histories[i].request.req_type;
+                    content_type = histories[i].request.content_type;
+                    headers = histories[i].request.headers;
+                    result = histories[i].response.result;
+                    query_args = histories[i].request.query_args;
+                    form_args = histories[i].request.form_args;
+                    input_json = histories[i].request.input_json;
+                    strcpy(url_buf, histories[i].request.url.buf_);
                 }
             }
             ImGui::EndChild();
@@ -644,7 +639,7 @@ int main(int argc, char* argv[])
                     if (selected >= histories.size()) {
                         selected = (int)histories.size()-1;
                     }
-                    ImGui::InputTextMultiline("##source", &histories[selected].result[0], histories[selected].result.capacity(), ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
+                    ImGui::InputTextMultiline("##source", &histories[selected].response.result[0], histories[selected].response.result.capacity(), ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
                 }
                 else {
                     char blank[] = "";
@@ -668,8 +663,8 @@ int main(int argc, char* argv[])
                         ImGui::Text("Value");
 
                         int i = 0;
-                        for (auto itr = histories[selected].result_headers.begin();
-                            itr != histories[selected].result_headers.end();
+                        for (auto itr = histories[selected].response.result_headers.begin();
+                            itr != histories[selected].response.result_headers.end();
                             ++itr)
                         {
                             ImGui::PushID(i);

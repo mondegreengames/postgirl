@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <cstdio>
 #include "requests.h"
 #include "pgstring.h"
 #include "pgvector.h"
