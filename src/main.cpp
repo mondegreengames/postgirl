@@ -2,7 +2,6 @@
 #include <atomic>
 #include <stdio.h>
 #include <ctype.h> // toupper
-#include <sys/time.h>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -15,9 +14,10 @@
 #include "requests.h"
 #include "utils.h"
 
-#ifdef _WINDOWS
+#ifdef _WIN32
 #include <windows.h>
 #else
+#include <sys/time.h>
 #include <unistd.h>
 #define Sleep(x) usleep((x)*1000)
 #endif
