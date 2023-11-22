@@ -84,7 +84,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
                       ContentType contentType, const pg::String& inputJson, 
                       pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code);
 
-pg::String RequestTypeToString(RequestType req);
+const char* RequestTypeToString(RequestType req);
 
 pg::String ContentTypeToString(ContentType ct);
 

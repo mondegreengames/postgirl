@@ -85,11 +85,16 @@ public:
         append(str.buf_);
     }
 
+    void resize(int size)
+    {
+        if (size >= capacity_)
+            realloc(size+1);
+    }
+
     inline void realloc(int size)
     {
-        if (buf_) free(buf_);
+        buf_ = (char*)::realloc(buf_, (size_t)size * sizeof(char));
         capacity_ = size;
-        buf_ = (char*)malloc((size_t)capacity_ * sizeof(char));
     }
 
     inline char* end()

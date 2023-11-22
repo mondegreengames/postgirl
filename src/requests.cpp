@@ -410,15 +410,15 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
 
 
 
-pg::String RequestTypeToString(RequestType req) {
+const char* RequestTypeToString(RequestType req) {
     switch(req) {
-        case GET:       return pg::String("GET");
-        case POST:      return pg::String("POST");
-        case DELETE:    return pg::String("DELETE");
-        case PATCH:     return pg::String("PATCH");
-        case PUT:       return pg::String("PUT");
+        case GET:       return "GET";
+        case POST:      return "POST";
+        case DELETE:    return "DELETE";
+        case PATCH:     return "PATCH";
+        case PUT:       return "PUT";
     }
-    return pg::String("UNDEFINED");
+    return "UNDEFINED";
 }
 
 

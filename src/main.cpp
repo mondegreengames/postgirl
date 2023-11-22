@@ -15,6 +15,7 @@
 #include "requests.h"
 #include "utils.h"
 #include "settings.h"
+#include "collection.h"
 #include "platform.h"
 
 #ifdef _WINDOWS
@@ -30,26 +31,23 @@
 // another, from the history list.
 int selected  = 0;
 
-void processRequest(std::thread& thread, const char* buf, 
-                    pg::Vector<History>& history, const pg::Vector<Argument>& query_args,
-                    const pg::Vector<Argument>& form_args, 
-                    const pg::Vector<Argument>& headers, int request_type, 
-                    ContentType contentType, const pg::String& inputJson,
+void processRequest(std::thread& thread,
+                    pg::Vector<History>& history, const Request& currentRequest,
                     std::atomic<ThreadStatus>& thread_status)
 {
     if (thread_status != IDLE)
         return;
     History hist;
-    hist.request.url = pg::String(buf);
-    hist.request.query_args = query_args;
-    hist.request.form_args = form_args;
-    hist.request.headers = headers;
-    hist.request.input_json = inputJson;
-    if (request_type == GET || request_type == DELETE || contentType != APPLICATION_JSON)
+    hist.request.url = currentRequest.url;
+    hist.request.query_args = currentRequest.query_args;
+    hist.request.form_args = currentRequest.form_args;
+    hist.request.headers = currentRequest.headers;
+    hist.request.input_json = currentRequest.input_json;
+    if (currentRequest.req_type == GET || currentRequest.req_type == DELETE || currentRequest.content_type != APPLICATION_JSON)
         hist.request.input_json = pg::String("");
     hist.response.result = pg::String("Processing");
-    hist.request.content_type = contentType;
-    hist.request.req_type = (RequestType)request_type;
+    hist.request.content_type = currentRequest.content_type;
+    hist.request.req_type = currentRequest.req_type;
     hist.request.timestamp = Platform::getUtcTimestampNow();
     history.push_back(hist);
     // points to the current (and unfinished) request
@@ -58,15 +56,15 @@ void processRequest(std::thread& thread, const char* buf,
     thread_status = RUNNING;
 
     auto& new_history = history.back(); 
-    switch(request_type) { 
+    switch(currentRequest.req_type) { 
         case GET:
         case DELETE:
-            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), (RequestType)request_type, new_history.request.url, new_history.request.query_args, new_history.request.headers, contentType, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
+            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), currentRequest.req_type, new_history.request.url, new_history.request.query_args, new_history.request.headers, currentRequest.content_type, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
             break;
         case POST:
         case PATCH:
         case PUT:
-            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), (RequestType)request_type, new_history.request.url, new_history.request.query_args, new_history.request.form_args, new_history.request.headers, contentType, new_history.request.input_json, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
+            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), currentRequest.req_type, new_history.request.url, new_history.request.query_args, new_history.request.form_args, new_history.request.headers, currentRequest.content_type, new_history.request.input_json, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
             break;
         default:
             history.back().response.result = pg::String("Invalid request type selected!");
@@ -89,6 +87,34 @@ static void glfw_error_callback(int error, const char* description)
 static inline float GetWindowContentRegionWidth()
 {
     return ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x; 
+}
+
+void renderCollections(const Item& item)
+{
+    const char* name = "Unnamed";
+    if (item.name.buf_[0] != 0)
+        name = item.name.buf_;
+
+    if (item.Data.index() == 0)
+    {
+        auto& items = std::get<pg::Vector<Item>>(item.Data);
+        if (ImGui::TreeNode(name))
+        {
+            for (auto itr = items.begin(); itr != items.end(); ++itr)
+                renderCollections((*itr));
+
+            ImGui::TreePop();
+        }
+    }
+    else
+    {
+        auto& request = std::get<Request>(item.Data);
+        
+        if (ImGui::TreeNodeEx(&item, ImGuiTreeNodeFlags_Leaf, "%s %s", RequestTypeToString(request.req_type), name))
+        {
+            ImGui::TreePop();
+        }
+    }         
 }
 
 int main(int argc, char* argv[])
@@ -190,6 +216,11 @@ int main(int argc, char* argv[])
         histories.push_back(temp_col);
     }
     bool update_hist_search = true; // used to init stuff on first run
+
+    Collection collection;
+    Collection::Load("collections.json", collection);
+
+
     curl_global_init(CURL_GLOBAL_ALL);
 
     pg::Vector<pg::String> content_type_str;
@@ -200,6 +231,11 @@ int main(int argc, char* argv[])
     for (int i=0; i<5; i++) {
         request_type_str.push_back(RequestTypeToString((RequestType)i));
     }
+
+    Request currentRequest;
+    currentRequest.url.resize(4098);
+    currentRequest.input_json.resize(1024*3200);
+    currentRequest.url.set("http://localhost:5000/test_route");
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -219,15 +255,18 @@ int main(int argc, char* argv[])
 
         static const char* items[] = {"GET", "POST", "DELETE", "PATCH", "PUT"};
         static const char* ct_post[] = {"multipart/form-data", "application/json", "<NONE>"};
-        static int request_type = 0;
-        static ContentType content_type = (ContentType)0;
-        static pg::Vector<Argument> headers;
+
+
+
+        //static int request_type = 0;
+        //static ContentType content_type = (ContentType)0;
+        //static pg::Vector<Argument> headers;
         static pg::String result;
-        static pg::Vector<Argument> query_args;
-        static pg::Vector<Argument> form_args;
-        static pg::String input_json(1024*3200); // 32KB static string should be reasonable
-        constexpr int url_buf_capacity = 4098;
-        static char url_buf[url_buf_capacity] = "http://localhost:5000/test_route";
+        //static pg::Vector<Argument> query_args;
+        //static pg::Vector<Argument> form_args;
+        //static pg::String input_json(1024*3200); // 32KB static string should be reasonable
+        //constexpr int url_buf_capacity = 4098;
+        //static char url_buf[url_buf_capacity] = "http://localhost:5000/test_route";
 
 
         bool settingsDirty = false;
@@ -289,18 +328,8 @@ int main(int argc, char* argv[])
         if (ImGui::BeginTabItem("History"))
         {
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
-            //ImGui::BeginChild("History", , 0), ImGuiChildFlags_ResizeX, window_flags);
 
             ImGui::Text("History Search");
-            // if (ImGui::BeginMenuBar()) {
-            //     for (int i=(int)histories.size()-1; i>=0; i--) {
-            //         if (ImGui::BeginMenu(histories[i].name.buf_)) {
-            //             curr_collection = i;
-            //             ImGui::EndMenu();
-            //         }
-            //     }
-            //     ImGui::EndMenuBar();
-            // }
 
             static pg::String hist_search;
             static pg::Vector<int> search_result;
@@ -348,14 +377,14 @@ int main(int argc, char* argv[])
                 sprintf(select_name, "(%s) %s##%d", request_type_str[(int)histories[i].request.req_type].buf_, histories[i].request.url.buf_, i);
                 if (ImGui::Selectable(select_name, selected==i)) {
                     selected = i;
-                    request_type = histories[i].request.req_type;
-                    content_type = histories[i].request.content_type;
-                    headers = histories[i].request.headers;
+                    currentRequest.req_type = histories[i].request.req_type;
+                    currentRequest.content_type = histories[i].request.content_type;
+                    currentRequest.headers = histories[i].request.headers;
                     result = histories[i].response.result;
-                    query_args = histories[i].request.query_args;
-                    form_args = histories[i].request.form_args;
-                    input_json = histories[i].request.input_json;
-                    strcpy(url_buf, histories[i].request.url.buf_);
+                    currentRequest.query_args = histories[i].request.query_args;
+                    currentRequest.form_args = histories[i].request.form_args;
+                    currentRequest.input_json = histories[i].request.input_json;
+                    currentRequest.url = histories[i].request.url;
                 }
             }
             ImGui::EndChild();
@@ -365,7 +394,10 @@ int main(int argc, char* argv[])
         }
         if (ImGui::BeginTabItem("Collections"))
         {
-            ImGui::Text("TODO");
+            for (auto itr = collection.Root.begin(); itr != collection.Root.end(); ++itr)
+            {
+                renderCollections((*itr));
+            }            
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -380,28 +412,28 @@ int main(int argc, char* argv[])
             ImGui::BeginChild("MainMenu", ImVec2(0, 0), false, window_flags);
 
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.125);
-            if (ImGui::BeginCombo("##request_type", items[request_type])) {
+            if (ImGui::BeginCombo("##request_type", items[currentRequest.req_type])) {
                 for (int n = 0; n < IM_ARRAYSIZE(items); n++) {
                     if (ImGui::Selectable(items[n])) {
-                        request_type = n;
-                        content_type = MULTIPART_FORMDATA;
+                        currentRequest.req_type = (RequestType)n;
+                        currentRequest.content_type = MULTIPART_FORMDATA;
                     }
                 }
                 ImGui::EndCombo();
             }
             ImGui::SameLine();
 
-            switch (request_type) {
+            switch (currentRequest.req_type) {
                 case GET:
                 case DELETE: break;
                 case POST:
                 case PATCH:
                 case PUT:
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25);
-                    if (ImGui::BeginCombo("##content_type", ct_post[(int)content_type])) {
+                    if (ImGui::BeginCombo("##content_type", ct_post[(int)currentRequest.content_type])) {
                         for (int n = 0; n < IM_ARRAYSIZE(ct_post); n++) {
                             if (ImGui::Selectable(ct_post[n])) {
-                                content_type = (ContentType)n;
+                                currentRequest.content_type = (ContentType)n;
                             }
                         }
                         ImGui::EndCombo();
@@ -411,18 +443,15 @@ int main(int argc, char* argv[])
             }
             
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
-            if (ImGui::InputText("##URL", url_buf, IM_ARRAYSIZE(url_buf), ImGuiInputTextFlags_EnterReturnsTrue) ) {
+            if (ImGui::InputText("##URL", currentRequest.url.buf_, currentRequest.url.capacity_, ImGuiInputTextFlags_EnterReturnsTrue) ) {
                 ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget
-                processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                processRequest(thread, histories, currentRequest, thread_status);
             }
             if (ImGui::IsItemEdited())
             {
-                query_args.clear();
-                deconstructUrl(url_buf, query_args);
+                currentRequest.query_args.clear();
+                deconstructUrl(currentRequest.url.buf_, currentRequest.query_args);
             }
-
-            // HEADERS START HERE
-            
 
             if (thread_status == FINISHED) {
                 thread.join();
@@ -438,18 +467,18 @@ int main(int argc, char* argv[])
                 static pg::Vector<int> delete_arg_btn;
                 
                 bool argsDirty = false;
-                for (int i=0; i<(int)query_args.size(); i++) {
+                for (int i=0; i<(int)currentRequest.query_args.size(); i++) {
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
                     char arg_name[32];
                     sprintf(arg_name, "Name##arg name%d", i);
-                    if (ImGui::InputText(arg_name, &query_args[i].name[0], query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                    if (ImGui::InputText(arg_name, &currentRequest.query_args[i].name[0], currentRequest.query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
+                        processRequest(thread, histories, currentRequest, thread_status);
                     if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                     ImGui::SameLine();
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
                     sprintf(arg_name, "Value##arg name%d", i);
-                    if (ImGui::InputText(arg_name, &query_args[i].value[0], query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                    if (ImGui::InputText(arg_name, &currentRequest.query_args[i].value[0], currentRequest.query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
+                        processRequest(thread, histories, currentRequest, thread_status);
                     if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                     ImGui::SameLine();
                     char btn_name[32];
@@ -464,7 +493,7 @@ int main(int argc, char* argv[])
                     }
                 }
 
-                if (query_args.empty())
+                if (currentRequest.query_args.empty())
                 {
                     ImGui::Text("No arguments to show");
                 }
@@ -472,27 +501,25 @@ int main(int argc, char* argv[])
                 if (ImGui::Button("Add Argument")) {
                     Argument arg;
                     arg.arg_type = 0;
-                    query_args.push_back(arg);
+                    currentRequest.query_args.push_back(arg);
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
-                    query_args.clear();
+                    currentRequest.query_args.clear();
                     argsDirty = true;
                 }
 
                 // delete the args
                 if (thread_status != RUNNING) {
                     for (int i=(int)delete_arg_btn.size(); i>0; i--) {
-                        query_args.erase(query_args.begin()+delete_arg_btn[i-1]);
+                        currentRequest.query_args.erase(currentRequest.query_args.begin()+delete_arg_btn[i-1]);
                     }
                 }
                 delete_arg_btn.clear();
 
                 if (argsDirty)
                 {
-                    auto newUrl = buildUrl(url_buf, query_args);
-                    strncpy(url_buf, newUrl.buf_, url_buf_capacity);
-                    url_buf[url_buf_capacity - 1] = 0;
+                    currentRequest.url = buildUrl(currentRequest.url.buf_, currentRequest.query_args);
                 }
 
                 ImGui::EndTabItem();
@@ -506,17 +533,17 @@ int main(int argc, char* argv[])
             if (ImGui::BeginTabItem("Headers"))
             {
                 static pg::Vector<int> delete_arg_btn;
-                for (int i=0; i<(int)headers.size(); i++) {
+                for (int i=0; i<(int)currentRequest.headers.size(); i++) {
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
                     char arg_name[32];
                     sprintf(arg_name, "Name##header arg name%d", i);
-                    if (ImGui::InputText(arg_name, &headers[i].name[0], headers[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                    if (ImGui::InputText(arg_name, &currentRequest.headers[i].name[0], currentRequest.headers[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
+                        processRequest(thread, histories, currentRequest, thread_status);
                     ImGui::SameLine();
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
                     sprintf(arg_name, "Value##header arg value%d", i);
-                    if (ImGui::InputText(arg_name, &headers[i].value[0], headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                    if (ImGui::InputText(arg_name, &currentRequest.headers[i].value[0], currentRequest.headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
+                        processRequest(thread, histories, currentRequest, thread_status);
                     ImGui::SameLine();
                     char btn_name[32];
                     sprintf(btn_name, "Delete##header arg delete%d", i);
@@ -525,64 +552,64 @@ int main(int argc, char* argv[])
                     }
                 }
 
-                if (headers.empty())
+                if (currentRequest.headers.empty())
                 {
                     ImGui::Text("No headers to show");
                 }
                 
                 // delete headers
                 for (int i=(int)delete_arg_btn.size(); i>0; i--) {
-                    headers.erase(headers.begin()+delete_arg_btn[i-1]);
+                    currentRequest.headers.erase(currentRequest.headers.begin()+delete_arg_btn[i-1]);
                 }
                 delete_arg_btn.clear();
 
                 if (ImGui::Button("Add Header Arg")) {
-                    headers.push_back(Argument());
+                    currentRequest.headers.push_back(Argument());
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Delete all headers") && thread_status != RUNNING) {
-                    headers.clear();
+                    currentRequest.headers.clear();
                 }
 
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Body"))
             {
-                if ((request_type == POST || request_type == PUT || request_type == PATCH))
+                if ((currentRequest.req_type == POST || currentRequest.req_type == PUT || currentRequest.req_type == PATCH))
                 {
-                    if (content_type == 1) {
+                    if (currentRequest.content_type == 1) {
                         ImGui::Text("Input JSON");
                         rapidjson::Document d;
                         // TODO: only check for JSON errors on changes instead of every frame
-                        if (d.Parse(input_json.buf_).HasParseError() && input_json.length() > 0) {
+                        if (d.Parse(currentRequest.input_json.buf_).HasParseError() && currentRequest.input_json.length() > 0) {
                             ImGui::SameLine();
                             ImGui::Text("Problems with JSON");
                         }
                         int block_height = ImGui::GetContentRegionAvail()[1];
                         block_height /= 2;
-                        ImGui::InputTextMultiline("##input_json", &input_json[0], input_json.capacity(), ImVec2(-1.0f, block_height), ImGuiInputTextFlags_AllowTabInput);
+                        ImGui::InputTextMultiline("##input_json", &currentRequest.input_json[0], currentRequest.input_json.capacity(), ImVec2(-1.0f, block_height), ImGuiInputTextFlags_AllowTabInput);
                     }
                     else {
                          static pg::Vector<int> delete_arg_btn;
 
-                        for (int i=0; i<(int)form_args.size(); i++) {
+                        for (int i=0; i<(int)currentRequest.form_args.size(); i++) {
                             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
                             char combo_name[32];
                             sprintf(combo_name, "##combo arg type%d", i);
-                            ImGui::Combo(combo_name, &form_args[i].arg_type, arg_types[request_type], num_arg_types[request_type]);
+                            ImGui::Combo(combo_name, &currentRequest.form_args[i].arg_type, arg_types[currentRequest.req_type], num_arg_types[currentRequest.req_type]);
                             ImGui::SameLine();
                             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
                             char arg_name[32];
                             sprintf(arg_name, "Name##arg name%d", i);
-                            if (ImGui::InputText(arg_name, &form_args[i].name[0], form_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                                processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                            if (ImGui::InputText(arg_name, &currentRequest.form_args[i].name[0], currentRequest.form_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
+                                processRequest(thread, histories, currentRequest, thread_status);
                             ImGui::SameLine();
                             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
                             sprintf(arg_name, "Value##arg name%d", i);
-                            if (ImGui::InputText(arg_name, &form_args[i].value[0], form_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                                processRequest(thread, url_buf, histories, query_args, form_args, headers, request_type, content_type, input_json, thread_status);
+                            if (ImGui::InputText(arg_name, &currentRequest.form_args[i].value[0], currentRequest.form_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
+                                processRequest(thread, histories, currentRequest, thread_status);
                             ImGui::SameLine();
-                            if (form_args[i].arg_type == 1) {
+                            if (currentRequest.form_args[i].arg_type == 1) {
                                 sprintf(arg_name, "File##arg name%d", i);
                                 if (ImGui::Button(arg_name)) {
                                     picking_file = true;
@@ -601,7 +628,7 @@ int main(int argc, char* argv[])
                             }
                         }
 
-                        if (form_args.empty())
+                        if (currentRequest.form_args.empty())
                         {
                             ImGui::Text("No arguments to show");
                         }
@@ -609,17 +636,17 @@ int main(int argc, char* argv[])
                         if (ImGui::Button("Add Argument")) {
                             Argument arg;
                             arg.arg_type = 0;
-                            form_args.push_back(arg);
+                            currentRequest.form_args.push_back(arg);
                         }
                         ImGui::SameLine();
                         if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
-                            form_args.clear();
+                            currentRequest.form_args.clear();
                         }
 
                         // delete the args
                         if (thread_status != RUNNING) {
                             for (int i=(int)delete_arg_btn.size(); i>0; i--) {
-                                form_args.erase(form_args.begin()+delete_arg_btn[i-1]);
+                                currentRequest.form_args.erase(currentRequest.form_args.begin()+delete_arg_btn[i-1]);
                             }
                         }
                         delete_arg_btn.clear();
@@ -734,11 +761,11 @@ int main(int argc, char* argv[])
                 ImVec2 pos = ImGui::GetCursorScreenPos();
                 ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x, pos.y), ImVec2(pos.x + ImGui::GetContentRegionAvail()[0], pos.y + ImGui::GetTextLineHeight()), IM_COL32(100,100,0,50));
                 if (ImGui::MenuItem(curr_files[i].buf_, NULL)) {
-                    if (curr_arg_file >= 0 && curr_arg_file < form_args.size()) {
+                    if (curr_arg_file >= 0 && curr_arg_file < currentRequest.form_args.size()) {
                         pg::String filename = curr_dir;
                         filename.append("/");
                         filename.append(curr_files[i]);
-                        form_args[curr_arg_file].value = filename;
+                        currentRequest.form_args[curr_arg_file].value = filename;
                     }                    
 
                     picking_file = false;

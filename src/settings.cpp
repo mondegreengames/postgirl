@@ -24,6 +24,18 @@ bool Settings::Save(const char* filename, const Settings& settings)
     themeValue.SetString(Settings::ThemeTypeToString(settings.Theme), allocator);
     root.AddMember("theme", themeValue, allocator);
 
+    if (settings.Font.buf_[0] != 0)
+    {
+        rapidjson::Value fontValue;
+        fontValue.SetString(settings.Font.buf_, allocator);
+        root.AddMember("font", fontValue, allocator);
+    }
+
+    if (settings.FontSize != 0)
+    {
+        root.AddMember("fontSize", settings.FontSize, allocator);
+    }
+
     document.AddMember("settings", root, allocator);
 
 
