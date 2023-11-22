@@ -89,8 +89,10 @@ static inline float GetWindowContentRegionWidth()
     return ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x; 
 }
 
-void renderCollections(const Item& item)
+const Request* renderCollections(const Item& item, const Request* originalSelectedRequest)
 {
+    const Request* selectedRequest = nullptr;
+
     const char* name = "Unnamed";
     if (item.name.buf_[0] != 0)
         name = item.name.buf_;
@@ -101,7 +103,11 @@ void renderCollections(const Item& item)
         if (ImGui::TreeNode(name))
         {
             for (auto itr = items.begin(); itr != items.end(); ++itr)
-                renderCollections((*itr));
+            {
+                const Request* renderResult = renderCollections((*itr), originalSelectedRequest);
+                if (renderResult != nullptr)
+                    selectedRequest = renderResult;
+            }
 
             ImGui::TreePop();
         }
@@ -110,11 +116,17 @@ void renderCollections(const Item& item)
     {
         auto& request = std::get<Request>(item.Data);
         
-        if (ImGui::TreeNodeEx(&item, ImGuiTreeNodeFlags_Leaf, "%s %s", RequestTypeToString(request.req_type), name))
+        bool selected = &request == originalSelectedRequest;
+        if (ImGui::TreeNodeEx(&item, ImGuiTreeNodeFlags_Leaf | (selected ? ImGuiTreeNodeFlags_Selected : 0), "%s %s", RequestTypeToString(request.req_type), name))
         {
+            if (ImGui::IsItemClicked())
+                selectedRequest = &request;
+
             ImGui::TreePop();
         }
-    }         
+    }
+
+    return selectedRequest;
 }
 
 int main(int argc, char* argv[])
@@ -377,14 +389,15 @@ int main(int argc, char* argv[])
                 sprintf(select_name, "(%s) %s##%d", request_type_str[(int)histories[i].request.req_type].buf_, histories[i].request.url.buf_, i);
                 if (ImGui::Selectable(select_name, selected==i)) {
                     selected = i;
-                    currentRequest.req_type = histories[i].request.req_type;
-                    currentRequest.content_type = histories[i].request.content_type;
-                    currentRequest.headers = histories[i].request.headers;
+                    currentRequest = histories[i].request;
+                    //currentRequest.req_type = histories[i].request.req_type;
+                    //currentRequest.content_type = histories[i].request.content_type;
+                    //currentRequest.headers = histories[i].request.headers;
                     result = histories[i].response.result;
-                    currentRequest.query_args = histories[i].request.query_args;
-                    currentRequest.form_args = histories[i].request.form_args;
-                    currentRequest.input_json = histories[i].request.input_json;
-                    currentRequest.url = histories[i].request.url;
+                    //currentRequest.query_args = histories[i].request.query_args;
+                    //currentRequest.form_args = histories[i].request.form_args;
+                    //currentRequest.input_json = histories[i].request.input_json;
+                    //currentRequest.url = histories[i].request.url;
                 }
             }
             ImGui::EndChild();
@@ -394,11 +407,19 @@ int main(int argc, char* argv[])
         }
         if (ImGui::BeginTabItem("Collections"))
         {
+            static const Request* originalSelectedRequest = nullptr;
+            const Request* selectedRequest = nullptr;
             for (auto itr = collection.Root.begin(); itr != collection.Root.end(); ++itr)
             {
-                renderCollections((*itr));
+                const Request* renderResult = renderCollections((*itr), nullptr);
+                if (renderResult != nullptr)
+                    selectedRequest = renderResult;
             }            
             ImGui::EndTabItem();
+            if (selectedRequest != nullptr)
+            {
+                currentRequest = *selectedRequest;
+            }
         }
         ImGui::EndTabBar();
         ImGui::EndChild();
