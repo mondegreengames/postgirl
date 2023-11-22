@@ -13,8 +13,10 @@
 #include "dirent_portable.h"
 #include "requests.h"
 #include "utils.h"
+#include "platform.h"
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
 #include <sys/time.h>
@@ -191,11 +193,8 @@ int main(int argc, char* argv[])
     // Main loop
     while (!glfwWindowShouldClose(window))
     {
-        long start, end;
-        struct timeval timecheck;
-
-        gettimeofday(&timecheck, NULL);
-        start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+        uint64_t start, end;
+        start = Platform::getUtcTimestampNow();
 
         glfwPollEvents();
 
@@ -475,7 +474,12 @@ int main(int argc, char* argv[])
                 }
                 pg::String aux_dir = curr_dir;
                 if (curr_dir.capacity_ < 2048) curr_dir.realloc(2048);
+#ifdef _WIN32
+                // TODO: verify that this actually works!
+                curr_dir = aux_dir;
+#else
                 realpath(aux_dir.buf_, curr_dir.buf_);
+#endif
                 closedir(dir);
 
                 qsort(curr_folders.begin(), curr_folders.size(), sizeof(*curr_folders.begin()), compareSize);
@@ -524,8 +528,7 @@ int main(int argc, char* argv[])
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
-        gettimeofday(&timecheck, NULL);
-        end = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+        end = Platform::getUtcTimestampNow();
         long sleep_time = 1000/60-(end-start);
         if (sleep_time > 0) {
             Sleep(sleep_time);

@@ -8,6 +8,10 @@
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 
+#ifdef _WIN32
+#undef DELETE
+#endif
+
 
 typedef enum ThreadStatus {
     IDLE     = 0,
