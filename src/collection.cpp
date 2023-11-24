@@ -32,6 +32,29 @@ bool parseRequest(const rapidjson::Value& request, Request& result)
             result.url = pg::String(url["raw"].GetString());
     }
 
+    if (request.HasMember("header") && request["header"].IsArray())
+    {
+        const auto& header = request["header"];
+        for (int i = 0; i < header.Size(); i++)
+        {
+            if (header[i].IsObject())
+            {
+                const auto& keyvalue = header[i];
+
+                if (keyvalue.HasMember("key") && keyvalue.HasMember("value"))
+                {
+                    const auto& key = keyvalue["key"];
+                    const auto& value = keyvalue["value"];
+
+                    if (key.IsString() && value.IsString())
+                    {
+                        result.headers.headers.push_back(HeaderKeyValue { .key = key.GetString(), .value = value.GetString() });
+                    }
+                }
+            }
+        }
+    }
+
     if (request.HasMember("body") && request["body"].IsObject())
     {
         const auto& body = request["body"];

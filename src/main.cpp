@@ -61,12 +61,32 @@ void processRequest(std::thread& thread,
         case RequestType::GET:
         case RequestType::DELETE:
         case RequestType::OPTIONS:
-            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), currentRequest.req_type, new_history.request.url, new_history.request.query_args, new_history.request.headers, currentRequest.body_type, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
+            thread = std::thread(threadRequestGetDelete, 
+                std::ref(thread_status), 
+                currentRequest.req_type, 
+                new_history.request.url, 
+                new_history.request.query_args, 
+                new_history.request.headers.headers, 
+                currentRequest.body_type, 
+                std::ref(new_history.response.result), 
+                std::ref(new_history.response.result_headers.headers), 
+                std::ref(new_history.response.response_code));
             break;
         case RequestType::POST:
         case RequestType::PATCH:
         case RequestType::PUT:
-            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), currentRequest.req_type, new_history.request.url, new_history.request.query_args, new_history.request.form_args, new_history.request.headers, currentRequest.body_type, new_history.request.input_json, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
+            thread = std::thread(threadRequestPostPatchPut, 
+                std::ref(thread_status), 
+                currentRequest.req_type, 
+                new_history.request.url, 
+                new_history.request.query_args, 
+                new_history.request.form_args, 
+                new_history.request.headers.headers, 
+                currentRequest.body_type, 
+                new_history.request.input_json, 
+                std::ref(new_history.response.result), 
+                std::ref(new_history.response.result_headers.headers), 
+                std::ref(new_history.response.response_code));
             break;
         default:
             history.back().response.result = pg::String("Invalid request type selected!");
@@ -261,7 +281,7 @@ int main(int argc, char* argv[])
         ImGui::NewFrame();
 
         //static const char* items[] = {"GET", "POST", "DELETE", "PATCH", "PUT"};
-        static const char* ct_post[] = {"multipart/form-data", "application/json", "<NONE>"};
+        //static const char* ct_post[] = {"multipart/form-data", "application/json", "<NONE>"};
 
 
 
@@ -438,26 +458,6 @@ int main(int argc, char* argv[])
                 ImGui::EndCombo();
             }
             ImGui::SameLine();
-
-            switch (currentRequest.req_type) {
-                case RequestType::GET:
-                case RequestType::DELETE:
-                case RequestType::OPTIONS: break;
-                case RequestType::POST:
-                case RequestType::PATCH:
-                case RequestType::PUT:
-                    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25);
-                    if (ImGui::BeginCombo("##content_type", ct_post[(int)currentRequest.body_type])) {
-                        for (int n = 0; n < IM_ARRAYSIZE(ct_post); n++) {
-                            if (ImGui::Selectable(ct_post[n])) {
-                                currentRequest.body_type = (BodyType)n;
-                            }
-                        }
-                        ImGui::EndCombo();
-                    }
-                    ImGui::SameLine();
-                    break;
-            }
             
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
             if (ImGui::InputText("##URL", currentRequest.url.buf_, currentRequest.url.capacity_, ImGuiInputTextFlags_EnterReturnsTrue) ) {
@@ -550,16 +550,16 @@ int main(int argc, char* argv[])
             if (ImGui::BeginTabItem("Headers"))
             {
                 static pg::Vector<int> delete_arg_btn;
-                for (int i=0; i<(int)currentRequest.headers.size(); i++) {
+                for (int i=0; i<(int)currentRequest.headers.headers.size(); i++) {
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
                     char arg_name[32];
                     sprintf(arg_name, "Name##header arg name%d", i);
-                    if (ImGui::InputText(arg_name, &currentRequest.headers[i].name[0], currentRequest.headers[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
+                    if (ImGui::InputText(arg_name, &currentRequest.headers.headers[i].key[0], currentRequest.headers.headers[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
                         processRequest(thread, histories, currentRequest, thread_status);
                     ImGui::SameLine();
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
                     sprintf(arg_name, "Value##header arg value%d", i);
-                    if (ImGui::InputText(arg_name, &currentRequest.headers[i].value[0], currentRequest.headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
+                    if (ImGui::InputText(arg_name, &currentRequest.headers.headers[i].value[0], currentRequest.headers.headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
                         processRequest(thread, histories, currentRequest, thread_status);
                     ImGui::SameLine();
                     char btn_name[32];
@@ -569,38 +569,87 @@ int main(int argc, char* argv[])
                     }
                 }
 
-                if (currentRequest.headers.empty())
+                if (currentRequest.headers.headers.empty())
                 {
                     ImGui::Text("No headers to show");
                 }
                 
                 // delete headers
                 for (int i=(int)delete_arg_btn.size(); i>0; i--) {
-                    currentRequest.headers.erase(currentRequest.headers.begin()+delete_arg_btn[i-1]);
+                    currentRequest.headers.headers.erase(currentRequest.headers.headers.begin()+delete_arg_btn[i-1]);
                 }
                 delete_arg_btn.clear();
 
                 if (ImGui::Button("Add Header Arg")) {
-                    currentRequest.headers.push_back(Argument());
+                    currentRequest.headers.headers.push_back(HeaderKeyValue{ .enabled = true });
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("Delete all headers") && thread_status != RUNNING) {
-                    currentRequest.headers.clear();
+                    currentRequest.headers.headers.clear();
                 }
 
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Body"))
             {
+                switch (currentRequest.req_type) {
+                    case RequestType::GET:
+                    case RequestType::DELETE:
+                    case RequestType::OPTIONS: break;
+                    case RequestType::POST:
+                    case RequestType::PATCH:
+                    case RequestType::PUT:
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25);
+                        if (ImGui::BeginCombo("##content_type", bodyTypeUIStrings[(int)currentRequest.body_type])) {
+                            for (int n = 0; n < bodyTypeStringsLength; n++) {
+                                if (ImGui::Selectable(bodyTypeUIStrings[n])) {
+                                    currentRequest.body_type = (BodyType)n;
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+                        break;
+                }
+                if (currentRequest.body_type == BodyType::RAW)
+                {
+                    ImGui::SameLine();
+                    
+                    const char* contentType = currentRequest.headers.findHeaderValue("Content-Type");
+                    int index = HeaderKeyValueCollection::contentTypeToRawBodyTypeIndex(contentType);
+                    const char* rawBodyType = index >= 0 ? rawBodyTypeUIStrings[index] : nullptr;
+
+                    if (ImGui::BeginCombo("##raw_body_type", rawBodyType))
+                    {
+                        for (int i = 0; i < rawBodyTypeStringsLength; i++)
+                        {
+                            if (ImGui::Selectable(rawBodyTypeUIStrings[i])) {
+                                currentRequest.headers.setHeaderValue("Content-Type", rawBodyTypeStrings[i]);
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
+
                 if ((currentRequest.req_type == RequestType::POST || currentRequest.req_type == RequestType::PUT || currentRequest.req_type == RequestType::PATCH))
                 {
                     if (currentRequest.body_type == BodyType::RAW) {
-                        ImGui::Text("Input JSON");
-                        rapidjson::Document d;
-                        // TODO: only check for JSON errors on changes instead of every frame
-                        if (d.Parse(currentRequest.input_json.buf_).HasParseError() && currentRequest.input_json.length() > 0) {
-                            ImGui::SameLine();
-                            ImGui::Text("Problems with JSON");
+
+                        const char* contentType = currentRequest.headers.findHeaderValue("Content-Type");
+                        bool isJson = contentType != nullptr && strcmp(contentType, "application/json") == 0;
+                        bool isXml = contentType != nullptr && strcmp(contentType, "application/xml") == 0;
+                        const char* label = isJson ? "Input JSON"
+                            : isXml ? "Input XML"
+                            : "Input";
+
+                        ImGui::Text(label);
+                        if (isJson)
+                        {
+                            rapidjson::Document d;
+                            // TODO: only check for JSON errors on changes instead of every frame
+                            if (d.Parse(currentRequest.input_json.buf_).HasParseError() && currentRequest.input_json.length() > 0) {
+                                ImGui::SameLine();
+                                ImGui::Text("Problems with JSON");
+                            }
                         }
                         int block_height = ImGui::GetContentRegionAvail()[1];
                         block_height /= 2;
@@ -707,16 +756,16 @@ int main(int argc, char* argv[])
                         ImGui::Text("Value");
 
                         int i = 0;
-                        for (auto itr = histories[selected].response.result_headers.begin();
-                            itr != histories[selected].response.result_headers.end();
+                        for (auto itr = histories[selected].response.result_headers.headers.begin();
+                            itr != histories[selected].response.result_headers.headers.end();
                             ++itr)
                         {
                             ImGui::PushID(i);
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
-                            ImGui::InputText("##name", (*itr).name.buf_, (*itr).name.capacity(), ImGuiInputTextFlags_ReadOnly);
+                            ImGui::InputText("##name", (*itr).key.buf_, (*itr).key.capacity(), ImGuiInputTextFlags_ReadOnly);
                             ImGui::TableNextColumn();
-                            ImGui::InputText("##value", (*itr).value.buf_, (*itr).name.capacity(), ImGuiInputTextFlags_ReadOnly);
+                            ImGui::InputText("##value", (*itr).value.buf_, (*itr).value.capacity(), ImGuiInputTextFlags_ReadOnly);
                             ImGui::PopID();
                         
                             i++;

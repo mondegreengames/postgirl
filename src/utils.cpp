@@ -22,6 +22,10 @@ void printArg(const Argument& arg) {
     printf("name: %s\nvalue: %s\narg_type: %d\n\n", arg.name.buf_, arg.value.buf_, arg.arg_type);
 }
 
+void printHeader(const HeaderKeyValue& header) {
+    printf("name: %s\nvalue: %s\nenabled: %s\n\n", header.key.buf_, header.value.buf_, header.enabled ? "true" : "false");
+}
+
 void printHistory(const History& hist) {
     printf("url: %s\ninput_json: %s\nresult: %s\n", hist.request.url.buf_, hist.request.input_json.buf_, hist.response.result.buf_);
     printf("req_type: %d\nbody_type: %d\nresponse_code: %d\n", (int)hist.request.req_type, (int)hist.request.body_type, hist.response.response_code);
@@ -34,8 +38,8 @@ void printHistory(const History& hist) {
         printArg(hist.request.query_args[i]);
     for (int i=0; i<hist.request.form_args.size(); i++)
         printArg(hist.request.form_args[i]);
-    for (int i=0; i<hist.request.headers.size(); i++)
-        printArg(hist.request.headers[i]);
+    for (int i=0; i<hist.request.headers.headers.size(); i++)
+        printHeader(hist.request.headers.headers[i]);
     printf("----------------------------------------------------------\n\n");
 }
 
@@ -164,11 +168,11 @@ pg::Vector<History> loadHistory(const pg::String& filename)
         
         const rapidjson::Value& headers = histories[j]["headers"];
         for (rapidjson::SizeType k = 0; k < headers.Size(); k++) {
-            Argument header;
-            header.name  = pg::String(headers[k]["name"].GetString());
+            HeaderKeyValue header;
+            header.key  = pg::String(headers[k]["name"].GetString());
             header.value = pg::String(headers[k]["value"].GetString());
-            header.arg_type = headers[k]["argument_type"].GetInt();
-            hist.request.headers.push_back(header);
+            header.enabled = true;// FIXME
+            hist.request.headers.headers.push_back(header);
         }
 
         // Parse the "arguments" collection to maintain compatibility
@@ -297,17 +301,17 @@ void saveHistory(const pg::Vector<History>& histories, const pg::String& filenam
         curr_history.AddMember("form_arguments", form_args_array, allocator);
 
         rapidjson::Value headers_array(rapidjson::kArrayType);
-        for (int k=0; k<histories[i].request.headers.size(); k++) {
+        for (int k=0; k<histories[i].request.headers.headers.size(); k++) {
             rapidjson::Value curr_header(rapidjson::kObjectType);
             rapidjson::Value name_str;
-            name_str.SetString(histories[i].request.headers[k].name.buf_, allocator);
+            name_str.SetString(histories[i].request.headers.headers[k].key.buf_, allocator);
             curr_header.AddMember("name", name_str, allocator);
 
             rapidjson::Value value_str;
-            value_str.SetString(histories[i].request.headers[k].value.buf_, allocator);
+            value_str.SetString(histories[i].request.headers.headers[k].value.buf_, allocator);
             curr_header.AddMember("value", value_str, allocator);
 
-            curr_header.AddMember("argument_type", histories[i].request.headers[k].arg_type, allocator);
+            curr_header.AddMember("enabled", histories[i].request.headers.headers[k].enabled, allocator);
             headers_array.PushBack(curr_header, allocator);
         }
         curr_history.AddMember("headers", headers_array, allocator);

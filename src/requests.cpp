@@ -56,9 +56,9 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 struct HttpHeaderParser
 {
     bool successful;
-    pg::Vector<Argument>& headers;
+    pg::Vector<HeaderKeyValue>& headers;
 
-    HttpHeaderParser(pg::Vector<Argument>& headers)
+    HttpHeaderParser(pg::Vector<HeaderKeyValue>& headers)
         : headers(headers)
     {
         this->headers = headers; 
@@ -86,9 +86,8 @@ private:
     {
         HttpHeaderParser* self = (HttpHeaderParser*)parser->data;
 
-        Argument arg;
-        arg.arg_type = 0;
-        arg.name = pg::String(at, (int)length);
+        HeaderKeyValue arg;
+        arg.key = pg::String(at, (int)length);
         self->headers.push_back(arg);
 
         return 0;
@@ -101,15 +100,14 @@ private:
         if (self->headers.empty() || self->headers.back().value.length() > 0)
         {
             // we have a value, but without a header name to correlate it to
-            Argument arg;
-            arg.arg_type = 0;
+            HeaderKeyValue arg;
             arg.value = pg::String(at, (int)length);
             self->headers.push_back(arg);
         }
         else
         {
             // add the value to the most recently added header
-            Argument &arg = self->headers.back();
+            auto &arg = self->headers.back();
             arg.value = pg::String(at, (int)length);
         }
 
@@ -228,14 +226,14 @@ const char* findContentType(const pg::Vector<Argument>& headers)
 }
 
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType, pg::String url,
-        pg::Vector<Argument> args, pg::Vector<Argument> headers, 
-                      BodyType contentTypeEnum, pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code) 
+        pg::Vector<Argument> args, pg::Vector<HeaderKeyValue> headers, 
+        BodyType contentTypeEnum, pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
 { 
     CURLcode res;
     CURL* curl;
     curl = curl_easy_init();
 
-    const char* contentType = findContentType(headers);
+    const char* contentType = HeaderKeyValueCollection::findHeaderValue(headers, "Content-Type");
 
     MemoryStruct chunk;
     MemoryStruct headerChunk;
@@ -254,8 +252,8 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
         header_chunk = curl_slist_append(header_chunk, aux.buf_);
     }  
     for (int i=0; i<(int)headers.size(); i++) {
-        pg::String header(headers[i].name);
-        if (headers[i].name.length() > 0) header.append(": ");
+        pg::String header(headers[i].key);
+        if (headers[i].key.length() > 0) header.append(": ");
         header.append(headers[i].value);
         header_chunk = curl_slist_append(header_chunk, header.buf_);
     }
@@ -300,16 +298,16 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
 
 void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
                       pg::String url, pg::Vector<Argument> query_args, pg::Vector<Argument> form_args, 
-                      pg::Vector<Argument> headers, 
+                      pg::Vector<HeaderKeyValue> headers, 
                       BodyType contentTypeEnum, const pg::String& inputJson, 
-                      pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code) 
+                      pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
 { 
     CURL *curl;
     CURLcode res;
     MemoryStruct chunk;
     MemoryStruct headerChunk;
 
-    const char* contentType = findContentType(headers);
+    const char* contentType = HeaderKeyValueCollection::findHeaderValue(headers, "Content-Type");
     if (contentType == nullptr || contentType[0] == 0)
     {
         switch(contentTypeEnum)
@@ -373,8 +371,8 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
             header_chunk = curl_slist_append(header_chunk, aux.buf_);
         }
         for (int i=0; i<(int)headers.size(); i++) {
-            pg::String header(headers[i].name);
-            if (headers[i].name.length() > 0) header.append(": ");
+            pg::String header(headers[i].key);
+            if (headers[i].key.length() > 0) header.append(": ");
             header.append(headers[i].value);
             header_chunk = curl_slist_append(header_chunk, header.buf_);
         }
