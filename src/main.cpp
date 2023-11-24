@@ -15,6 +15,7 @@
 #include "utils.h"
 #include "settings.h"
 #include "collection.h"
+#include "history.h"
 #include "platform.h"
 
 #ifdef _WIN32

@@ -113,7 +113,7 @@ typedef struct HeaderKeyValueCollection {
     static int contentTypeToRawBodyTypeIndex(const char* contentType)
     {
         if (contentType == nullptr) return -1;
-        
+
         for (int i = 0; i < rawBodyTypeStringsLength; i++)
         {
             if (strcmp(contentType, rawBodyTypeStrings[i]) == 0)
@@ -175,10 +175,7 @@ typedef struct Response
     }
 } Response;
 
-typedef struct History {
-    Request request;
-    Response response;
-} History;
+
 
 
 pg::String buildUrl(const char* baseUrl, const pg::Vector<Argument>& args);

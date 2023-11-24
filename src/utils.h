@@ -14,13 +14,8 @@ void readStringFromIni(char* buffer, FILE* fid);
 
 void printArg(const Argument& arg);
 
-void printHistory(const History& hist);
 
-History readHistory(FILE* fid);
-
-pg::Vector<History> loadHistory(const pg::String& filename);
-
-void saveHistory(const pg::Vector<History>& histories, const pg::String& filename, bool pretty);
+void printHeader(const HeaderKeyValue& header);
 
 const char* Stristr(const char* haystack, const char* haystack_end, const char* needle, const char* needle_end);
 
