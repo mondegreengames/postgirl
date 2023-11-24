@@ -24,7 +24,7 @@ void printArg(const Argument& arg) {
 
 void printHistory(const History& hist) {
     printf("url: %s\ninput_json: %s\nresult: %s\n", hist.request.url.buf_, hist.request.input_json.buf_, hist.response.result.buf_);
-    printf("req_type: %d\ncontent_type: %d\nresponse_code: %d\n", (int)hist.request.req_type, (int)hist.request.content_type, hist.response.response_code);
+    printf("req_type: %d\nbody_type: %d\nresponse_code: %d\n", (int)hist.request.req_type, (int)hist.request.body_type, hist.response.response_code);
     
     char date_buf[128];
     Platform::timestampToIsoString(hist.request.timestamp, date_buf, sizeof(date_buf));
@@ -80,6 +80,58 @@ char* readFile(char *filename)
     return buffer;
 }
 
+bool tryGetInt(const rapidjson::Value& value, const char* name, int* result)
+{
+    if (value.HasMember(name))
+    {
+        const auto& ivalue = value[name];
+        if (ivalue.IsInt())
+        {
+            if (result != nullptr) *result = ivalue.GetInt();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool tryGetString(const rapidjson::Value& value, const char* name, pg::String& result)
+{
+    if (value.HasMember(name))
+    {
+        const auto& svalue = value[name];
+        if (svalue.IsString())
+        {
+            result.set(svalue.GetString());
+            return true;
+        }
+    }
+
+    return false;
+}
+
+template<typename T>
+bool tryGetStringEnum(const rapidjson::Value& value, const char* name, const char* values[], int numValues, T* result)
+{
+    if (value.HasMember(name))
+    {
+        const auto& svalue = value[name];
+        if (svalue.IsString())
+        {
+            auto str = svalue.GetString();
+            for (int i = 0; i < numValues; i++)
+            {
+                if (strcmp(values[i], str) == 0)
+                {
+                    if (result != nullptr) *result = (T)i;
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
 
 pg::Vector<History> loadHistory(const pg::String& filename) 
 {
@@ -102,8 +154,10 @@ pg::Vector<History> loadHistory(const pg::String& filename)
         History hist;
         hist.request.url = pg::String(histories[j]["url"].GetString());
         hist.request.input_json = pg::String(histories[j]["input_json"].GetString());
-        hist.request.req_type = (RequestType)histories[j]["request_type"].GetInt();
-        hist.request.content_type = (ContentType)histories[j]["content_type"].GetInt();
+        if (tryGetStringEnum(histories[j], "request_type", requestTypeStrings, requestTypeStringsLength, &hist.request.req_type) == false)
+            hist.request.req_type = RequestType::GET;
+        if (tryGetStringEnum(histories[j], "body_type", bodyTypeStrings, bodyTypeStringsLength, &hist.request.body_type) == false)
+            hist.request.body_type = BodyType::MULTIPART_FORMDATA;
         Platform::isoStringToTimestamp(histories[j]["process_time"].GetString(), &hist.request.timestamp);
         hist.response.result = prettify(pg::String(histories[j]["result"].GetString()));
         hist.response.response_code = histories[j]["response_code"].GetInt();
@@ -190,8 +244,13 @@ void saveHistory(const pg::Vector<History>& histories, const pg::String& filenam
         input_json_str.SetString(histories[i].request.input_json.buf_, allocator);
         curr_history.AddMember("input_json", input_json_str, allocator);
 
-        curr_history.AddMember("request_type", histories[i].request.req_type, allocator);
-        curr_history.AddMember("content_type", histories[i].request.content_type, allocator);
+        rapidjson::Value request_type_str;
+        request_type_str.SetString(RequestTypeToString(histories[i].request.req_type), allocator);
+        curr_history.AddMember("request_type", request_type_str, allocator);
+
+        rapidjson::Value body_type_str;
+        body_type_str.SetString(BodyTypeToString(histories[i].request.body_type), allocator);
+        curr_history.AddMember("body_type", body_type_str, allocator);
         
         rapidjson::Value process_time_str;
         char buffer[128];

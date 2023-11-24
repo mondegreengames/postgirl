@@ -32,6 +32,35 @@ bool parseRequest(const rapidjson::Value& request, Request& result)
             result.url = pg::String(url["raw"].GetString());
     }
 
+    if (request.HasMember("body") && request["body"].IsObject())
+    {
+        const auto& body = request["body"];
+        
+        if (body.HasMember("raw"))
+        {
+            result.body_type = BodyType::RAW;
+            if (body["raw"].IsString())
+            {
+                result.input_json.set(body["raw"].GetString());
+            }
+        }
+        else if (body.HasMember("urlencoded"))
+        {
+            result.body_type = BodyType::URL_ENCODED;
+            // TODO: load the parameters
+        }
+        else if (body.HasMember("formdata"))
+        {
+            result.body_type = BodyType::MULTIPART_FORMDATA;
+            // TODO: load the parameters
+        }
+        else if (body.HasMember("file"))
+        {
+            result.body_type = BodyType::FILE;
+            // TODO: load the parameters
+        }
+    }
+
     // TODO: the rest
 
     return true;

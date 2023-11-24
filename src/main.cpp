@@ -44,10 +44,10 @@ void processRequest(std::thread& thread,
     hist.request.form_args = currentRequest.form_args;
     hist.request.headers = currentRequest.headers;
     hist.request.input_json = currentRequest.input_json;
-    if (currentRequest.req_type == GET || currentRequest.req_type == DELETE || currentRequest.content_type != APPLICATION_JSON)
+    if (currentRequest.req_type == RequestType::GET || currentRequest.req_type == RequestType::DELETE || currentRequest.body_type != BodyType::RAW)
         hist.request.input_json = pg::String("");
     hist.response.result = pg::String("Processing");
-    hist.request.content_type = currentRequest.content_type;
+    hist.request.body_type = currentRequest.body_type;
     hist.request.req_type = currentRequest.req_type;
     hist.request.timestamp = Platform::getUtcTimestampNow();
     history.push_back(hist);
@@ -58,14 +58,15 @@ void processRequest(std::thread& thread,
 
     auto& new_history = history.back(); 
     switch(currentRequest.req_type) { 
-        case GET:
-        case DELETE:
-            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), currentRequest.req_type, new_history.request.url, new_history.request.query_args, new_history.request.headers, currentRequest.content_type, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
+        case RequestType::GET:
+        case RequestType::DELETE:
+        case RequestType::OPTIONS:
+            thread = std::thread(threadRequestGetDelete, std::ref(thread_status), currentRequest.req_type, new_history.request.url, new_history.request.query_args, new_history.request.headers, currentRequest.body_type, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
             break;
-        case POST:
-        case PATCH:
-        case PUT:
-            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), currentRequest.req_type, new_history.request.url, new_history.request.query_args, new_history.request.form_args, new_history.request.headers, currentRequest.content_type, new_history.request.input_json, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
+        case RequestType::POST:
+        case RequestType::PATCH:
+        case RequestType::PUT:
+            thread = std::thread(threadRequestPostPatchPut, std::ref(thread_status), currentRequest.req_type, new_history.request.url, new_history.request.query_args, new_history.request.form_args, new_history.request.headers, currentRequest.body_type, new_history.request.input_json, std::ref(new_history.response.result), std::ref(new_history.response.result_headers), std::ref(new_history.response.response_code));
             break;
         default:
             history.back().response.result = pg::String("Invalid request type selected!");
@@ -235,15 +236,11 @@ int main(int argc, char* argv[])
 
 
     curl_global_init(CURL_GLOBAL_ALL);
-
-    pg::Vector<pg::String> content_type_str;
-    content_type_str.push_back(ContentTypeToString(MULTIPART_FORMDATA));
-    content_type_str.push_back(ContentTypeToString(APPLICATION_JSON));
     
-    pg::Vector<pg::String> request_type_str;
-    for (int i=0; i<5; i++) {
-        request_type_str.push_back(RequestTypeToString((RequestType)i));
-    }
+    //pg::Vector<pg::String> request_type_str;
+    //for (int i=0; i<5; i++) {
+    //    request_type_str.push_back(RequestTypeToString((RequestType)i));
+    //}
 
     Request currentRequest;
     currentRequest.url.resize(4098);
@@ -263,7 +260,7 @@ int main(int argc, char* argv[])
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        static const char* items[] = {"GET", "POST", "DELETE", "PATCH", "PUT"};
+        //static const char* items[] = {"GET", "POST", "DELETE", "PATCH", "PUT"};
         static const char* ct_post[] = {"multipart/form-data", "application/json", "<NONE>"};
 
 
@@ -384,7 +381,7 @@ int main(int argc, char* argv[])
             for (int sr=0; sr<search_result.size(); sr++) {
                 int i = search_result[sr];
                 char select_name[2048];
-                sprintf(select_name, "(%s) %s##%d", request_type_str[(int)histories[i].request.req_type].buf_, histories[i].request.url.buf_, i);
+                sprintf(select_name, "(%s) %s##%d", requestTypeStrings[(int)histories[i].request.req_type], histories[i].request.url.buf_, i);
                 if (ImGui::Selectable(select_name, selected==i)) {
                     selected = i;
                     currentRequest = histories[i].request;
@@ -431,11 +428,11 @@ int main(int argc, char* argv[])
             ImGui::BeginChild("MainMenu", ImVec2(0, 0), false, window_flags);
 
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.125);
-            if (ImGui::BeginCombo("##request_type", items[currentRequest.req_type])) {
-                for (int n = 0; n < IM_ARRAYSIZE(items); n++) {
-                    if (ImGui::Selectable(items[n])) {
+            if (ImGui::BeginCombo("##request_type", requestTypeStrings[(int)currentRequest.req_type])) {
+                for (int n = 0; n < requestTypeStringsLength; n++) {
+                    if (ImGui::Selectable(requestTypeStrings[n])) {
                         currentRequest.req_type = (RequestType)n;
-                        currentRequest.content_type = MULTIPART_FORMDATA;
+                        currentRequest.body_type = BodyType::MULTIPART_FORMDATA;
                     }
                 }
                 ImGui::EndCombo();
@@ -443,16 +440,17 @@ int main(int argc, char* argv[])
             ImGui::SameLine();
 
             switch (currentRequest.req_type) {
-                case GET:
-                case DELETE: break;
-                case POST:
-                case PATCH:
-                case PUT:
+                case RequestType::GET:
+                case RequestType::DELETE:
+                case RequestType::OPTIONS: break;
+                case RequestType::POST:
+                case RequestType::PATCH:
+                case RequestType::PUT:
                     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25);
-                    if (ImGui::BeginCombo("##content_type", ct_post[(int)currentRequest.content_type])) {
+                    if (ImGui::BeginCombo("##content_type", ct_post[(int)currentRequest.body_type])) {
                         for (int n = 0; n < IM_ARRAYSIZE(ct_post); n++) {
                             if (ImGui::Selectable(ct_post[n])) {
-                                currentRequest.content_type = (ContentType)n;
+                                currentRequest.body_type = (BodyType)n;
                             }
                         }
                         ImGui::EndCombo();
@@ -594,9 +592,9 @@ int main(int argc, char* argv[])
             }
             if (ImGui::BeginTabItem("Body"))
             {
-                if ((currentRequest.req_type == POST || currentRequest.req_type == PUT || currentRequest.req_type == PATCH))
+                if ((currentRequest.req_type == RequestType::POST || currentRequest.req_type == RequestType::PUT || currentRequest.req_type == RequestType::PATCH))
                 {
-                    if (currentRequest.content_type == 1) {
+                    if (currentRequest.body_type == BodyType::RAW) {
                         ImGui::Text("Input JSON");
                         rapidjson::Document d;
                         // TODO: only check for JSON errors on changes instead of every frame
@@ -615,7 +613,7 @@ int main(int argc, char* argv[])
                             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
                             char combo_name[32];
                             sprintf(combo_name, "##combo arg type%d", i);
-                            ImGui::Combo(combo_name, &currentRequest.form_args[i].arg_type, arg_types[currentRequest.req_type], num_arg_types[currentRequest.req_type]);
+                            ImGui::Combo(combo_name, &currentRequest.form_args[i].arg_type, arg_types[(int)currentRequest.req_type], num_arg_types[(int)currentRequest.req_type]);
                             ImGui::SameLine();
                             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
                             char arg_name[32];

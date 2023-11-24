@@ -20,18 +20,45 @@ typedef enum ThreadStatus {
     FINISHED = 2
 } ThreadStatus;
 
-typedef enum RequestType {
-    GET     = 0,
-    POST    = 1,
-    DELETE  = 2,
-    PATCH   = 3,
-    PUT     = 4
-} RequestType;
+#define DEFINE_REQUEST_TYPES \
+    DEFINE_ENUM_VALUE(GET, "GET") \
+    DEFINE_ENUM_VALUE(POST, "POST") \
+    DEFINE_ENUM_VALUE(DELETE, "DELETE") \
+    DEFINE_ENUM_VALUE(PATCH, "PATCH") \
+    DEFINE_ENUM_VALUE(PUT, "PUT") \
+    DEFINE_ENUM_VALUE(OPTIONS, "OPTIONS")
 
-typedef enum ContentType {
-    MULTIPART_FORMDATA  = 0,
-    APPLICATION_JSON    = 1
-} ContentType;
+#define DEFINE_BODY_TYPES \
+    DEFINE_ENUM_VALUE(MULTIPART_FORMDATA, "formdata") \
+    DEFINE_ENUM_VALUE(RAW, "raw") \
+    DEFINE_ENUM_VALUE(URL_ENCODED, "urlencoded") \
+    DEFINE_ENUM_VALUE(FILE, "file")
+
+#define DEFINE_ENUM_VALUE(name, string) name,
+
+enum class RequestType {
+    DEFINE_REQUEST_TYPES
+};
+
+enum class BodyType {
+    DEFINE_BODY_TYPES
+};
+
+#undef DEFINE_ENUM_VALUE
+
+#define DEFINE_ENUM_VALUE(name, string) string,
+
+static const char* requestTypeStrings[] = {
+    DEFINE_REQUEST_TYPES
+};
+constexpr int requestTypeStringsLength = sizeof(requestTypeStrings) / sizeof(const char*);
+
+static const char* bodyTypeStrings[] = {
+    DEFINE_BODY_TYPES
+};
+constexpr int bodyTypeStringsLength = sizeof(bodyTypeStrings) / sizeof(const char*);
+
+#undef DEFINE_ENUM_VALUE
 
 typedef struct Argument { 
     pg::String name;
@@ -47,11 +74,11 @@ typedef struct Request
     pg::Vector<Argument> headers;
     pg::String input_json;
     RequestType req_type;
-    ContentType content_type;
+    BodyType body_type;
     uint64_t timestamp;
 
     Request()
-        : req_type(GET), content_type(MULTIPART_FORMDATA), timestamp(0)
+        : req_type(RequestType::GET), body_type(BodyType::MULTIPART_FORMDATA), timestamp(0)
     {}
 
 } Request;
@@ -80,17 +107,17 @@ bool deconstructUrl(const char* url, pg::Vector<Argument>& args);
 
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType,  
                       pg::String url, pg::Vector<Argument> args, pg::Vector<Argument> headers, 
-                      ContentType contentType, pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code);
+                      BodyType contentType, pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code);
 
 void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
                       pg::String url, pg::Vector<Argument> query_args, pg::Vector<Argument> form_args,
                       pg::Vector<Argument> headers, 
-                      ContentType contentType, const pg::String& inputJson, 
+                      BodyType contentType, const pg::String& inputJson, 
                       pg::String& thread_result, pg::Vector<Argument>& response_headers, int& response_code);
 
 const char* RequestTypeToString(RequestType req);
 
-pg::String ContentTypeToString(ContentType ct);
+const char* BodyTypeToString(BodyType ct);
 
 pg::String prettify(pg::String input);
 

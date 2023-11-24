@@ -62,6 +62,18 @@ public:
         return *this;
     }
 
+    inline bool operator==(const String& b) const
+    {
+        bool result = strcmp(this->buf_, b.buf_) == 0;
+        return result;
+    }
+
+    inline bool operator==(const char* b) const
+    {
+        bool result = strcmp(this->buf_, b) == 0;
+        return result;
+    }
+
     inline void set(const char* str)
     {
         int size = strlen(str)+1;
