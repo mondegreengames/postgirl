@@ -26,22 +26,24 @@ typedef enum ThreadStatus {
     DEFINE_ENUM_VALUE(DELETE, "DELETE", "DELETE") \
     DEFINE_ENUM_VALUE(PATCH, "PATCH", "PATCH") \
     DEFINE_ENUM_VALUE(PUT, "PUT", "PUT") \
-    DEFINE_ENUM_VALUE(OPTIONS, "OPTIONS", "OPTIONS")
+    DEFINE_LAST_ENUM_VALUE(OPTIONS, "OPTIONS", "OPTIONS")
 
 #define DEFINE_BODY_TYPES \
     DEFINE_ENUM_VALUE(NONE, "none", "none") \
     DEFINE_ENUM_VALUE(MULTIPART_FORMDATA, "formdata", "form-data") \
     DEFINE_ENUM_VALUE(URL_ENCODED, "urlencoded", "x-www-form-urlencoded") \
     DEFINE_ENUM_VALUE(RAW, "raw", "raw") \
-    DEFINE_ENUM_VALUE(FILE, "file", "binary")
+    DEFINE_LAST_ENUM_VALUE(FILE, "file", "binary")
 
 #define DEFINE_RAW_BODY_TYPES \
     DEFINE_ENUM_VALUE(TEXT, "text/plain", "Text") \
     DEFINE_ENUM_VALUE(JSON, "application/json", "JSON") \
-    DEFINE_ENUM_VALUE(XML, "application/xml", "XML")
+    DEFINE_LAST_ENUM_VALUE(XML, "application/xml", "XML")
 
 #define DEFINE_ENUM_VALUE(name, string, uistring) name,
+#define DEFINE_LAST_ENUM_VALUE(name, string, uistring) DEFINE_ENUM_VALUE(name, string, uistring) _LAST = name, _COUNT = _LAST + 1
 
+#define COUNTER_BASE __COUNTER__
 enum class RequestType {
     DEFINE_REQUEST_TYPES
 };
@@ -50,38 +52,25 @@ enum class BodyType {
     DEFINE_BODY_TYPES
 };
 
+enum class RawBodyType {
+    DEFINE_RAW_BODY_TYPES
+};
+
 #undef DEFINE_ENUM_VALUE
+#undef DEFINE_LAST_ENUM_VALUE
 
 #define DEFINE_ENUM_VALUE(name, string, uistring) string,
+#define DEFINE_LAST_ENUM_VALUE(name, string, uistring) DEFINE_ENUM_VALUE(name, string, uistring)
 
-static const char* requestTypeStrings[] = {
-    DEFINE_REQUEST_TYPES
-};
-constexpr int requestTypeStringsLength = sizeof(requestTypeStrings) / sizeof(const char*);
+extern const char* requestTypeStrings[(int)RequestType::_COUNT];
+extern const char* bodyTypeStrings[(int)BodyType::_COUNT];
+extern const char* rawBodyTypeStrings[(int)RawBodyType::_COUNT];
 
-static const char* bodyTypeStrings[] = {
-    DEFINE_BODY_TYPES
-};
-constexpr int bodyTypeStringsLength = sizeof(bodyTypeStrings) / sizeof(const char*);
-
-static const char* rawBodyTypeStrings[] = {
-    DEFINE_RAW_BODY_TYPES
-};
-constexpr int rawBodyTypeStringsLength = sizeof(rawBodyTypeStrings) / sizeof(const char*);
+extern const char* bodyTypeUIStrings[(int)BodyType::_COUNT];
+extern const char* rawBodyTypeUIStrings[(int)RawBodyType::_COUNT];
 
 #undef DEFINE_ENUM_VALUE
-
-#define DEFINE_ENUM_VALUE(name, string, uistring) uistring,
-
-static const char* bodyTypeUIStrings[] = {
-    DEFINE_BODY_TYPES
-};
-
-static const char* rawBodyTypeUIStrings[] = {
-    DEFINE_RAW_BODY_TYPES
-};
-
-#undef DEFINE_ENUM_VALUE
+#undef DEFINE_LAST_ENUM_VALUE
 
 typedef struct HeaderKeyValue {
     pg::String key;
@@ -114,7 +103,7 @@ typedef struct HeaderKeyValueCollection {
     {
         if (contentType == nullptr) return -1;
 
-        for (int i = 0; i < rawBodyTypeStringsLength; i++)
+        for (int i = 0; i < (int)RawBodyType::_COUNT; i++)
         {
             if (strcmp(contentType, rawBodyTypeStrings[i]) == 0)
                 return i;

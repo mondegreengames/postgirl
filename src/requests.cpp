@@ -2,6 +2,31 @@
 #include "utils.h"
 #include "../third_party/llhttp/include/llhttp.h"
 
+#define DEFINE_ENUM_VALUE(name, string, uistring) string,
+#define DEFINE_LAST_ENUM_VALUE(name, string, uistring) DEFINE_ENUM_VALUE(name, string, uistring)
+
+const char* requestTypeStrings[] = {
+    DEFINE_REQUEST_TYPES
+};
+
+const char* bodyTypeStrings[] = {
+    DEFINE_BODY_TYPES
+};
+
+const char* rawBodyTypeStrings[] = {
+    DEFINE_RAW_BODY_TYPES
+};
+
+#undef DEFINE_ENUM_VALUE
+#define DEFINE_ENUM_VALUE(name, string, uistring) uistring,
+
+const char* bodyTypeUIStrings[] = {
+    DEFINE_BODY_TYPES
+};
+
+const char* rawBodyTypeUIStrings[] = {
+    DEFINE_RAW_BODY_TYPES
+};
 
 struct WriteThis {
   const char *readptr;
@@ -433,14 +458,14 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
 
 const char* RequestTypeToString(RequestType req) {
 
-    if ((int)req >= 0 && (int)req < requestTypeStringsLength)
+    if ((int)req >= 0 && (int)req < (int)RequestType::_COUNT)
         return requestTypeStrings[(int)req];
 
     return "UNDEFINED";
 }
 
 const char* BodyTypeToString(BodyType ct) {
-    if ((int)ct >= 0 && (int)ct < bodyTypeStringsLength)
+    if ((int)ct >= 0 && (int)ct < (int)BodyType::_COUNT)
         return bodyTypeStrings[(int)ct];
 
     return "<NONE>";

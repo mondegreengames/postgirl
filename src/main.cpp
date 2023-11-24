@@ -450,7 +450,7 @@ int main(int argc, char* argv[])
 
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.125);
             if (ImGui::BeginCombo("##request_type", requestTypeStrings[(int)currentRequest.req_type])) {
-                for (int n = 0; n < requestTypeStringsLength; n++) {
+                for (int n = 0; n < (int)RequestType::_COUNT; n++) {
                     if (ImGui::Selectable(requestTypeStrings[n])) {
                         currentRequest.req_type = (RequestType)n;
                         currentRequest.body_type = BodyType::MULTIPART_FORMDATA;
@@ -602,7 +602,7 @@ int main(int argc, char* argv[])
                     case RequestType::PUT:
                         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25);
                         if (ImGui::BeginCombo("##content_type", bodyTypeUIStrings[(int)currentRequest.body_type])) {
-                            for (int n = 0; n < bodyTypeStringsLength; n++) {
+                            for (int n = 0; n < (int)BodyType::_COUNT; n++) {
                                 if (ImGui::Selectable(bodyTypeUIStrings[n])) {
                                     currentRequest.body_type = (BodyType)n;
                                 }
@@ -610,6 +610,7 @@ int main(int argc, char* argv[])
                             ImGui::EndCombo();
                         }
                         break;
+                    case RequestType::_COUNT: break; // make the compiler happy
                 }
                 if (currentRequest.body_type == BodyType::RAW)
                 {
@@ -621,7 +622,7 @@ int main(int argc, char* argv[])
 
                     if (ImGui::BeginCombo("##raw_body_type", rawBodyType))
                     {
-                        for (int i = 0; i < rawBodyTypeStringsLength; i++)
+                        for (int i = 0; i < (int)RawBodyType::_COUNT; i++)
                         {
                             if (ImGui::Selectable(rawBodyTypeUIStrings[i])) {
                                 currentRequest.headers.setHeaderValue("Content-Type", rawBodyTypeStrings[i]);

@@ -105,9 +105,9 @@ pg::Vector<History> loadHistory(const pg::String& filename)
         History hist;
         hist.request.url = pg::String(histories[j]["url"].GetString());
         hist.request.input_json = pg::String(histories[j]["input_json"].GetString());
-        if (tryGetStringEnum(histories[j], "request_type", requestTypeStrings, requestTypeStringsLength, &hist.request.req_type) == false)
+        if (tryGetStringEnum(histories[j], "request_type", requestTypeStrings, (int)RequestType::_COUNT, &hist.request.req_type) == false)
             hist.request.req_type = RequestType::GET;
-        if (tryGetStringEnum(histories[j], "body_type", bodyTypeStrings, bodyTypeStringsLength, &hist.request.body_type) == false)
+        if (tryGetStringEnum(histories[j], "body_type", bodyTypeStrings, (int)BodyType::_COUNT, &hist.request.body_type) == false)
             hist.request.body_type = BodyType::MULTIPART_FORMDATA;
         Platform::isoStringToTimestamp(histories[j]["process_time"].GetString(), &hist.request.timestamp);
         hist.response.result = prettify(pg::String(histories[j]["result"].GetString()));
