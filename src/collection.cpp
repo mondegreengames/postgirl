@@ -5,6 +5,55 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
 
+bool parseAuth(const rapidjson::Value& auth, Auth& result)
+{
+    if (auth.HasMember("type") && auth["type"].IsString())
+    {
+        auto type = auth["type"].GetString();
+        for (int i = 0; i < (int)AuthType::_COUNT; i++)
+        {
+            if (strcmp(type, authTypeStrings[i]) == 0)
+            {
+                result.type = (AuthType)i;
+
+                if (auth.HasMember(authTypeStrings[i]))
+                {
+                    const auto& authData = auth[authTypeStrings[i]];
+                    if (authData.IsArray())
+                    {
+                        // v2.1 collection format
+                        for (rapidjson::SizeType i = 0; i < authData.Size(); i++)
+                        {
+                            if (authData[i].IsObject() && authData[i].HasMember("key") && authData[i]["key"].IsString() && authData[i].HasMember("value"))
+                            {
+                                const auto& key = authData[i]["key"];
+                                const auto& value = authData[i]["value"];
+                                
+                                AuthAttribute attrib;
+                                attrib.key = key.GetString();
+
+                                if (value.IsString())
+                                    attrib.value = value.GetString();
+                                // TODO: are there other types we need to support, like booleans?
+
+                                result.attributes.push_back(attrib);
+                            }
+                        }
+                    }
+                    else if (authData.IsObject())
+                    {
+                        // TODO: v2.0 collection format
+                    }
+                }
+
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 bool parseRequest(const rapidjson::Value& request, Request& result)
 {
     if (request.IsObject() == false) return false;
@@ -35,7 +84,7 @@ bool parseRequest(const rapidjson::Value& request, Request& result)
     if (request.HasMember("header") && request["header"].IsArray())
     {
         const auto& header = request["header"];
-        for (int i = 0; i < header.Size(); i++)
+        for (rapidjson::SizeType i = 0; i < header.Size(); i++)
         {
             if (header[i].IsObject())
             {
@@ -84,6 +133,13 @@ bool parseRequest(const rapidjson::Value& request, Request& result)
         }
     }
 
+    if (request.HasMember("auth") && request["auth"].IsObject())
+    {
+        const auto& auth = request["auth"];
+
+        parseAuth(auth, result.auth);
+    }
+
     // TODO: the rest
 
     return true;
@@ -105,7 +161,7 @@ bool parseItem(const rapidjson::Value& item, Item& result)
         if (parseRequest(requestJson, request))
         {
             result.name = name == nullptr ? pg::String("") : pg::String(name);
-            result.Data = request;
+            result.data = request;
             return true;
         }
     }
@@ -125,7 +181,13 @@ bool parseItem(const rapidjson::Value& item, Item& result)
                     itemList.push_back(item);
             }
 
-            result.Data = itemList;
+            result.data = itemList;
+        }
+
+        if (item.HasMember("auth") && item["auth"].IsObject())
+        {
+            const auto& auth = item["auth"];
+            parseAuth(auth, result.auth);
         }
 
         return true;
@@ -155,13 +217,18 @@ bool Collection::Load(const char* filename, Collection& result)
         return false;
     }
 
-    result.Root.clear();
+    result.root.clear();
     const auto& items = document["item"];
     for (rapidjson::SizeType j = 0; j < items.Size(); j++)
     {
         struct Item item;
         if (parseItem(items[j], item))
-            result.Root.push_back(item);
+            result.root.push_back(item);
+    }
+
+    if (document.HasMember("auth"))
+    {
+        parseAuth(document["auth"], result.auth);
     }
 
     fclose(fp);

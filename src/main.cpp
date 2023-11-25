@@ -120,9 +120,9 @@ const Request* renderCollections(const Item& item, const Request* originalSelect
     if (item.name.buf_[0] != 0)
         name = item.name.buf_;
 
-    if (item.Data.index() == 0)
+    if (item.data.index() == 0)
     {
-        auto& items = std::get<pg::Vector<Item>>(item.Data);
+        auto& items = std::get<pg::Vector<Item>>(item.data);
         if (ImGui::TreeNode(name))
         {
             for (auto itr = items.begin(); itr != items.end(); ++itr)
@@ -137,7 +137,7 @@ const Request* renderCollections(const Item& item, const Request* originalSelect
     }
     else
     {
-        auto& request = std::get<Request>(item.Data);
+        auto& request = std::get<Request>(item.data);
         
         bool selected = &request == originalSelectedRequest;
         if (ImGui::TreeNodeEx(&item, ImGuiTreeNodeFlags_Leaf | (selected ? ImGuiTreeNodeFlags_Selected : 0), "%s %s", RequestTypeToString(request.req_type), name))
@@ -425,7 +425,7 @@ int main(int argc, char* argv[])
         {
             static const Request* originalSelectedRequest = nullptr;
             const Request* selectedRequest = nullptr;
-            for (auto itr = collection.Root.begin(); itr != collection.Root.end(); ++itr)
+            for (auto itr = collection.root.begin(); itr != collection.root.end(); ++itr)
             {
                 const Request* renderResult = renderCollections((*itr), nullptr);
                 if (renderResult != nullptr)
@@ -443,7 +443,6 @@ int main(int argc, char* argv[])
         ImGui::SameLine();
 
         {
-            // ImGui::Begin("Postgirl");//, NULL, ImGuiWindowFlags_MenuBar );
             ImGui::BeginGroup();
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
             ImGui::BeginChild("MainMenu", ImVec2(0, 0), false, window_flags);

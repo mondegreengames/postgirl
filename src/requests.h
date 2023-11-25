@@ -40,6 +40,20 @@ typedef enum ThreadStatus {
     DEFINE_ENUM_VALUE(JSON, "application/json", "JSON") \
     DEFINE_LAST_ENUM_VALUE(XML, "application/xml", "XML")
 
+#define DEFINE_AUTH_TYPES \
+    DEFINE_ENUM_VALUE(NONE, "none", "None") \
+    DEFINE_ENUM_VALUE(APIKEY, "apikey", "API key") \
+    DEFINE_ENUM_VALUE(AWSV4, "awsv4", "AWS v4") \
+    DEFINE_ENUM_VALUE(BASIC, "basic", "Basic") \
+    DEFINE_ENUM_VALUE(BEARER, "bearer", "Bearer") \
+    DEFINE_ENUM_VALUE(DIGEST, "digest", "Digest") \
+    DEFINE_ENUM_VALUE(EDGEGRID, "edgegrid", "EdgeGrid") \
+    DEFINE_ENUM_VALUE(HAWK, "hawk", "Hawk") \
+    DEFINE_ENUM_VALUE(NOAUTH, "noauth", "nOAuth") \
+    DEFINE_ENUM_VALUE(OAUTH1, "oauth1", "OAuth 1") \
+    DEFINE_ENUM_VALUE(OAUTH2, "oauth2", "OAuth 2") \
+    DEFINE_LAST_ENUM_VALUE(NTLM, "ntlm", "NTLM")
+
 #define DEFINE_ENUM_VALUE(name, string, uistring) name,
 #define DEFINE_LAST_ENUM_VALUE(name, string, uistring) DEFINE_ENUM_VALUE(name, string, uistring) _LAST = name, _COUNT = _LAST + 1
 
@@ -56,6 +70,10 @@ enum class RawBodyType {
     DEFINE_RAW_BODY_TYPES
 };
 
+enum class AuthType {
+    DEFINE_AUTH_TYPES
+};
+
 #undef DEFINE_ENUM_VALUE
 #undef DEFINE_LAST_ENUM_VALUE
 
@@ -65,9 +83,11 @@ enum class RawBodyType {
 extern const char* requestTypeStrings[(int)RequestType::_COUNT];
 extern const char* bodyTypeStrings[(int)BodyType::_COUNT];
 extern const char* rawBodyTypeStrings[(int)RawBodyType::_COUNT];
+extern const char* authTypeStrings[(int)AuthType::_COUNT];
 
 extern const char* bodyTypeUIStrings[(int)BodyType::_COUNT];
 extern const char* rawBodyTypeUIStrings[(int)RawBodyType::_COUNT];
+extern const char* authTypeUIStrings[(int)AuthType::_COUNT];
 
 #undef DEFINE_ENUM_VALUE
 #undef DEFINE_LAST_ENUM_VALUE
@@ -134,9 +154,26 @@ typedef struct Argument {
     int arg_type; // TODO: transform this to an ENUM soon!!!!
 } Argument; 
 
+struct AuthAttribute
+{
+    pg::String key;
+    pg::String value;
+};
+
+struct Auth
+{
+    AuthType type;
+    pg::Vector<AuthAttribute> attributes;
+
+    Auth()
+        : type(AuthType::NONE)
+    {}
+};
+
 typedef struct Request
 {
     pg::String url;
+    Auth auth;
     pg::Vector<Argument> query_args;
     pg::Vector<Argument> form_args;
     HeaderKeyValueCollection headers;

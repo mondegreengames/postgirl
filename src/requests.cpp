@@ -17,6 +17,10 @@ const char* rawBodyTypeStrings[] = {
     DEFINE_RAW_BODY_TYPES
 };
 
+const char* authTypeStrings[] = {
+    DEFINE_AUTH_TYPES
+};
+
 #undef DEFINE_ENUM_VALUE
 #define DEFINE_ENUM_VALUE(name, string, uistring) uistring,
 
@@ -26,6 +30,10 @@ const char* bodyTypeUIStrings[] = {
 
 const char* rawBodyTypeUIStrings[] = {
     DEFINE_RAW_BODY_TYPES
+};
+
+const char* authTypeUIStrings[] = {
+    DEFINE_AUTH_TYPES
 };
 
 struct WriteThis {
