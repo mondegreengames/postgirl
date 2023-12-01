@@ -186,6 +186,18 @@ typedef struct Request
         : req_type(RequestType::GET), body_type(BodyType::MULTIPART_FORMDATA), timestamp(0)
     {}
 
+    Request(const Request& request)
+        : url(request.url), 
+        auth(request.auth), 
+        query_args(request.query_args), 
+        form_args(request.form_args), 
+        headers(request.headers), 
+        input_json(request.input_json), 
+        req_type(request.req_type),
+        body_type(request.body_type), 
+        timestamp(0)
+    {}
+
 } Request;
 
 typedef struct Response

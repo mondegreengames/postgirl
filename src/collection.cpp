@@ -231,6 +231,13 @@ bool Collection::Load(const char* filename, Collection& result)
         parseAuth(document["auth"], result.auth);
     }
 
+    if (document.HasMember("info") && document["info"].IsObject())
+    {
+        const auto& info = document["info"];
+        if (info.HasMember("name") && info["name"].IsString())
+            result.name = info["name"].GetString();
+    }
+
     fclose(fp);
     return true;
 }

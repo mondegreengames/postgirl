@@ -16,6 +16,7 @@ struct Collection
 {
     pg::Vector<Item> root;
     Auth auth;
+    pg::String name;
 
     static bool Load(const char* filename, Collection& result);
 };

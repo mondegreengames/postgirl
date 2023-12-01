@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <ctype.h> // toupper
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "GL/gl3w.h"    // This example is using gl3w to access OpenGL functions (because it is small). You may use glew/glad/glLoadGen/etc. whatever already works for you.
@@ -17,6 +18,8 @@
 #include "collection.h"
 #include "history.h"
 #include "platform.h"
+#include "dynamicBitSet.h"
+#include "collectionTree.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -26,8 +29,6 @@
 #include <unistd.h>
 #define Sleep(x) usleep((x)*1000)
 #endif
-
-
 
 // Defines the current selected request. It may the current one or
 // another, from the history list.
@@ -112,6 +113,65 @@ static inline float GetWindowContentRegionWidth()
     return ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x; 
 }
 
+const Request* renderCollections(const CollectionTree& tree)
+{
+    ImGuiContext* ctx = ImGui::GetCurrentContext();
+
+    const Request* selectedRequest = nullptr;
+    bool selected = false;
+
+    static pg::Vector<int> stack;
+    stack.resize(0);
+
+    int i = 0;
+    while(i < tree.nodes.Size) {
+
+        const CollectionNode* itr = &tree.nodes[i];
+        
+        while(stack.Size > 0 && itr->parentIndex != stack.back()) {
+            ImGui::TreePop();
+            stack.pop_back();
+        }
+
+        const char* name;
+        if (itr->nameIndex == CollectionTree::InvalidIndex) {
+            name = "Unnamed";
+        }
+        else {
+            name = tree.names[itr->nameIndex].buf_;
+        }
+
+        bool nodeOpen;
+        if (itr->requestIndex != CollectionTree::InvalidIndex) {
+            const Request* req = &tree.requests[itr->requestIndex];
+            nodeOpen = ImGui::TreeNodeEx(itr, ImGuiTreeNodeFlags_Leaf, "%s %s", RequestTypeToString(req->req_type), name);
+
+            if (ImGui::IsItemClicked()) {
+                selectedRequest = req;
+                ctx->InputTextDeactivatedState.ID = 0; // workaround for the url textbox overwriting this value
+            }
+        }
+        else {
+            nodeOpen = ImGui::TreeNodeEx(itr, 0, "%s", name);
+        }
+
+        if (nodeOpen == false) {
+            i += itr->numDescendants + 1;
+        }
+        else {
+            stack.push_back(i);
+            i++;
+        }
+    }
+
+    while(stack.Size > 0) {
+        ImGui::TreePop();
+        stack.pop_back();
+    }
+
+    return selectedRequest;
+}
+
 const Request* renderCollections(const Item& item, const Request* originalSelectedRequest)
 {
     const Request* selectedRequest = nullptr;
@@ -154,6 +214,8 @@ const Request* renderCollections(const Item& item, const Request* originalSelect
 
 int main(int argc, char* argv[])
 {
+    DynamicBitSet::test();
+
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         return 1;
@@ -255,6 +317,8 @@ int main(int argc, char* argv[])
     Collection collection;
     Collection::Load("collections.json", collection);
 
+    CollectionTree tree;
+    buildTreeFromCollection(collection, tree);
 
     curl_global_init(CURL_GLOBAL_ALL);
     
@@ -423,14 +487,8 @@ int main(int argc, char* argv[])
         }
         if (ImGui::BeginTabItem("Collections"))
         {
-            static const Request* originalSelectedRequest = nullptr;
-            const Request* selectedRequest = nullptr;
-            for (auto itr = collection.root.begin(); itr != collection.root.end(); ++itr)
-            {
-                const Request* renderResult = renderCollections((*itr), nullptr);
-                if (renderResult != nullptr)
-                    selectedRequest = renderResult;
-            }            
+            const Request* selectedRequest = renderCollections(tree);
+
             ImGui::EndTabItem();
             if (selectedRequest != nullptr)
             {
@@ -642,7 +700,7 @@ int main(int argc, char* argv[])
                             : isXml ? "Input XML"
                             : "Input";
 
-                        ImGui::Text(label);
+                        ImGui::TextUnformatted(label);
                         if (isJson)
                         {
                             rapidjson::Document d;
