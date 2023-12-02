@@ -113,11 +113,12 @@ static inline float GetWindowContentRegionWidth()
     return ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x; 
 }
 
-const Request* renderCollections(const CollectionTree& tree)
+Request* renderCollections(CollectionTree& tree, const Request* currentRequest, /* out */ int* dirtyFlagIndex)
 {
     ImGuiContext* ctx = ImGui::GetCurrentContext();
 
-    const Request* selectedRequest = nullptr;
+    Request* selectedRequest = nullptr;
+    int dirtyFlag = CollectionTree::InvalidIndex;
     bool selected = false;
 
     static pg::Vector<int> stack;
@@ -141,18 +142,24 @@ const Request* renderCollections(const CollectionTree& tree)
             name = tree.names[itr->nameIndex].buf_;
         }
 
+        const char* dirtyIndicator = tree.isDirty(itr->dirtyIndex) ? "*" : "";
+
         bool nodeOpen;
         if (itr->requestIndex != CollectionTree::InvalidIndex) {
-            const Request* req = &tree.requests[itr->requestIndex];
-            nodeOpen = ImGui::TreeNodeEx(itr, ImGuiTreeNodeFlags_Leaf, "%s %s", RequestTypeToString(req->req_type), name);
+            Request* req = &tree.requests[itr->requestIndex];
+            const bool selected = currentRequest == req;
+            const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | (selected ? ImGuiTreeNodeFlags_Selected : 0);
+            nodeOpen = ImGui::TreeNodeEx(itr, flags, "%s %s%s", RequestTypeToString(req->req_type), name, dirtyIndicator);
 
             if (ImGui::IsItemClicked()) {
                 selectedRequest = req;
+                dirtyFlag = itr->dirtyIndex;
+
                 ctx->InputTextDeactivatedState.ID = 0; // workaround for the url textbox overwriting this value
             }
         }
         else {
-            nodeOpen = ImGui::TreeNodeEx(itr, 0, "%s", name);
+            nodeOpen = ImGui::TreeNodeEx(itr, 0, "%s%s", name, dirtyIndicator);
         }
 
         if (nodeOpen == false) {
@@ -169,9 +176,16 @@ const Request* renderCollections(const CollectionTree& tree)
         stack.pop_back();
     }
 
+    if (dirtyFlagIndex != nullptr) {
+        *dirtyFlagIndex = dirtyFlag;
+    }
+
     return selectedRequest;
 }
 
+#define MAKE_TREE_NODE_DIRTY(index) if (index != CollectionTree::InvalidIndex) { tree.setDirty(index, true); }
+
+#if 0
 const Request* renderCollections(const Item& item, const Request* originalSelectedRequest)
 {
     const Request* selectedRequest = nullptr;
@@ -211,6 +225,7 @@ const Request* renderCollections(const Item& item, const Request* originalSelect
 
     return selectedRequest;
 }
+#endif
 
 int main(int argc, char* argv[])
 {
@@ -327,10 +342,12 @@ int main(int argc, char* argv[])
     //    request_type_str.push_back(RequestTypeToString((RequestType)i));
     //}
 
-    Request currentRequest;
-    currentRequest.url.resize(4098);
-    currentRequest.input_json.resize(1024*3200);
-    currentRequest.url.set("http://localhost:5000/test_route");
+    Request workingRequest;
+    workingRequest.url.resize(4098);
+    workingRequest.input_json.resize(1024*3200);
+    workingRequest.url.set("http://localhost:5000/test_route");
+    Request* currentRequest = nullptr;
+    int currentRequestDirtyFlagIndex = CollectionTree::InvalidIndex;
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -469,7 +486,9 @@ int main(int argc, char* argv[])
                 sprintf(select_name, "(%s) %s##%d", requestTypeStrings[(int)histories[i].request.req_type], histories[i].request.url.buf_, i);
                 if (ImGui::Selectable(select_name, selected==i)) {
                     selected = i;
-                    currentRequest = histories[i].request;
+                    workingRequest = histories[i].request;
+                    currentRequest = &workingRequest;
+                    currentRequestDirtyFlagIndex = CollectionTree::InvalidIndex;
                     //currentRequest.req_type = histories[i].request.req_type;
                     //currentRequest.content_type = histories[i].request.content_type;
                     //currentRequest.headers = histories[i].request.headers;
@@ -487,12 +506,14 @@ int main(int argc, char* argv[])
         }
         if (ImGui::BeginTabItem("Collections"))
         {
-            const Request* selectedRequest = renderCollections(tree);
+            int dirtyFlagIndex;
+            Request* selectedRequest = renderCollections(tree, currentRequest, &dirtyFlagIndex);
 
             ImGui::EndTabItem();
             if (selectedRequest != nullptr)
             {
-                currentRequest = *selectedRequest;
+                currentRequest = selectedRequest;
+                currentRequestDirtyFlagIndex = dirtyFlagIndex;
             }
         }
         ImGui::EndTabBar();
@@ -505,341 +526,374 @@ int main(int argc, char* argv[])
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
             ImGui::BeginChild("MainMenu", ImVec2(0, 0), false, window_flags);
 
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.125);
-            if (ImGui::BeginCombo("##request_type", requestTypeStrings[(int)currentRequest.req_type])) {
-                for (int n = 0; n < (int)RequestType::_COUNT; n++) {
-                    if (ImGui::Selectable(requestTypeStrings[n])) {
-                        currentRequest.req_type = (RequestType)n;
-                        currentRequest.body_type = BodyType::MULTIPART_FORMDATA;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-            ImGui::SameLine();
-            
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
-            if (ImGui::InputText("##URL", currentRequest.url.buf_, currentRequest.url.capacity_, ImGuiInputTextFlags_EnterReturnsTrue) ) {
-                ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget
-                processRequest(thread, histories, currentRequest, thread_status);
-            }
-            if (ImGui::IsItemEdited())
-            {
-                currentRequest.query_args.clear();
-                deconstructUrl(currentRequest.url.buf_, currentRequest.query_args);
-            }
+            if (currentRequest != nullptr) {
 
-            if (thread_status == FINISHED) {
-                thread.join();
-                thread_status = IDLE;
-                selected = (int)histories.size()-1;
-                saveHistory(histories, "history.json", settings.PrettifyCollectionsJson);
-                update_hist_search = true;
-            }
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.125);
+                if (ImGui::BeginCombo("##request_type", requestTypeStrings[(int)currentRequest->req_type])) {
+                    for (int n = 0; n < (int)RequestType::_COUNT; n++) {
+                        if (ImGui::Selectable(requestTypeStrings[n])) {
+                            currentRequest->req_type = (RequestType)n;
+                            currentRequest->body_type = BodyType::MULTIPART_FORMDATA;
 
-            ImGui::BeginTabBar("requesttabs");
-            if (ImGui::BeginTabItem("Params"))
-            {
-                static pg::Vector<int> delete_arg_btn;
-                
-                bool argsDirty = false;
-                for (int i=0; i<(int)currentRequest.query_args.size(); i++) {
-                    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
-                    char arg_name[32];
-                    sprintf(arg_name, "Name##arg name%d", i);
-                    if (ImGui::InputText(arg_name, &currentRequest.query_args[i].name[0], currentRequest.query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, histories, currentRequest, thread_status);
-                    if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
-                    ImGui::SameLine();
-                    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
-                    sprintf(arg_name, "Value##arg name%d", i);
-                    if (ImGui::InputText(arg_name, &currentRequest.query_args[i].value[0], currentRequest.query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, histories, currentRequest, thread_status);
-                    if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
-                    ImGui::SameLine();
-                    char btn_name[32];
-                    sprintf(btn_name, "Delete##arg delete%d", i);
-                    if (ImGui::Button(btn_name)) {
-                        if (curr_arg_file == i) {
-                            curr_arg_file = -1;
-                            picking_file = false;
+                            MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
                         }
-                        delete_arg_btn.push_back(i);
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::SameLine();
+                
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
+                if (ImGui::InputText("##URL", currentRequest->url.buf_, currentRequest->url.capacity_, ImGuiInputTextFlags_EnterReturnsTrue) ) {
+                    ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget
+                    MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                    processRequest(thread, histories, *currentRequest, thread_status);
+                }
+                if (ImGui::IsItemEdited())
+                {
+                    currentRequest->query_args.clear();
+                    deconstructUrl(currentRequest->url.buf_, currentRequest->query_args);
+                    MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                }
+
+                if (thread_status == FINISHED) {
+                    thread.join();
+                    thread_status = IDLE;
+                    selected = (int)histories.size()-1;
+                    saveHistory(histories, "history.json", settings.PrettifyCollectionsJson);
+                    update_hist_search = true;
+                }
+
+                ImGui::BeginTabBar("requesttabs");
+                if (ImGui::BeginTabItem("Params"))
+                {
+                    static pg::Vector<int> delete_arg_btn;
+                    
+                    bool argsDirty = false;
+                    for (int i=0; i<(int)currentRequest->query_args.size(); i++) {
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
+                        char arg_name[32];
+                        sprintf(arg_name, "Name##arg name%d", i);
+                        if (ImGui::InputText(arg_name, &currentRequest->query_args[i].name[0], currentRequest->query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                            processRequest(thread, histories, *currentRequest, thread_status);
+                        }
+                        if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
+                        ImGui::SameLine();
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
+                        sprintf(arg_name, "Value##arg name%d", i);
+                        if (ImGui::InputText(arg_name, &currentRequest->query_args[i].value[0], currentRequest->query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                            processRequest(thread, histories, *currentRequest, thread_status);
+                        }
+                        if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
+                        ImGui::SameLine();
+                        char btn_name[32];
+                        sprintf(btn_name, "Delete##arg delete%d", i);
+                        if (ImGui::Button(btn_name)) {
+                            if (curr_arg_file == i) {
+                                curr_arg_file = -1;
+                                picking_file = false;
+                            }
+                            delete_arg_btn.push_back(i);
+                            argsDirty = true;
+                            MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                        }
+                    }
+
+                    if (currentRequest->query_args.empty())
+                    {
+                        ImGui::Text("No arguments to show");
+                    }
+                    
+                    if (ImGui::Button("Add Argument")) {
+                        Argument arg;
+                        arg.arg_type = 0;
+                        currentRequest->query_args.push_back(arg);
+                        MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
+                        currentRequest->query_args.clear();
                         argsDirty = true;
+                        MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
                     }
-                }
 
-                if (currentRequest.query_args.empty())
+                    // delete the args
+                    if (thread_status != RUNNING) {
+                        for (int i=(int)delete_arg_btn.size(); i>0; i--) {
+                            currentRequest->query_args.erase(currentRequest->query_args.begin()+delete_arg_btn[i-1]);
+                        }
+                    }
+                    delete_arg_btn.clear();
+
+                    if (argsDirty)
+                    {
+                        currentRequest->url = buildUrl(currentRequest->url.buf_, currentRequest->query_args);
+                        MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                    }
+
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Authorization"))
                 {
-                    ImGui::Text("No arguments to show");
-                }
-                
-                if (ImGui::Button("Add Argument")) {
-                    Argument arg;
-                    arg.arg_type = 0;
-                    currentRequest.query_args.push_back(arg);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
-                    currentRequest.query_args.clear();
-                    argsDirty = true;
-                }
+                    ImGui::Text("TODO...");
 
-                // delete the args
-                if (thread_status != RUNNING) {
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Headers"))
+                {
+                    static pg::Vector<int> delete_arg_btn;
+                    for (int i=0; i<(int)currentRequest->headers.headers.size(); i++) {
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
+                        char arg_name[32];
+                        sprintf(arg_name, "Name##header arg name%d", i);
+                        if (ImGui::InputText(arg_name, &currentRequest->headers.headers[i].key[0], currentRequest->headers.headers[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                            processRequest(thread, histories, *currentRequest, thread_status);
+                        }
+                        ImGui::SameLine();
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
+                        sprintf(arg_name, "Value##header arg value%d", i);
+                        if (ImGui::InputText(arg_name, &currentRequest->headers.headers[i].value[0], currentRequest->headers.headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                            processRequest(thread, histories, *currentRequest, thread_status);
+                        }
+                        ImGui::SameLine();
+                        char btn_name[32];
+                        sprintf(btn_name, "Delete##header arg delete%d", i);
+                        if (ImGui::Button(btn_name)) {
+                            MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                            delete_arg_btn.push_back(i);
+                        }
+                    }
+
+                    if (currentRequest->headers.headers.empty())
+                    {
+                        ImGui::Text("No headers to show");
+                    }
+                    
+                    // delete headers
                     for (int i=(int)delete_arg_btn.size(); i>0; i--) {
-                        currentRequest.query_args.erase(currentRequest.query_args.begin()+delete_arg_btn[i-1]);
+                        currentRequest->headers.headers.erase(currentRequest->headers.headers.begin()+delete_arg_btn[i-1]);
                     }
-                }
-                delete_arg_btn.clear();
+                    delete_arg_btn.clear();
 
-                if (argsDirty)
-                {
-                    currentRequest.url = buildUrl(currentRequest.url.buf_, currentRequest.query_args);
-                }
-
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Authorization"))
-            {
-                ImGui::Text("TODO...");
-
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Headers"))
-            {
-                static pg::Vector<int> delete_arg_btn;
-                for (int i=0; i<(int)currentRequest.headers.headers.size(); i++) {
-                    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
-                    char arg_name[32];
-                    sprintf(arg_name, "Name##header arg name%d", i);
-                    if (ImGui::InputText(arg_name, &currentRequest.headers.headers[i].key[0], currentRequest.headers.headers[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, histories, currentRequest, thread_status);
-                    ImGui::SameLine();
-                    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
-                    sprintf(arg_name, "Value##header arg value%d", i);
-                    if (ImGui::InputText(arg_name, &currentRequest.headers.headers[i].value[0], currentRequest.headers.headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                        processRequest(thread, histories, currentRequest, thread_status);
-                    ImGui::SameLine();
-                    char btn_name[32];
-                    sprintf(btn_name, "Delete##header arg delete%d", i);
-                    if (ImGui::Button(btn_name)) {
-                        delete_arg_btn.push_back(i);
+                    if (ImGui::Button("Add Header Arg")) {
+                        currentRequest->headers.headers.push_back(HeaderKeyValue{ .enabled = true });
+                        MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
                     }
-                }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Delete all headers") && thread_status != RUNNING) {
+                        currentRequest->headers.headers.clear();
+                        MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                    }
 
-                if (currentRequest.headers.headers.empty())
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Body"))
                 {
-                    ImGui::Text("No headers to show");
-                }
-                
-                // delete headers
-                for (int i=(int)delete_arg_btn.size(); i>0; i--) {
-                    currentRequest.headers.headers.erase(currentRequest.headers.headers.begin()+delete_arg_btn[i-1]);
-                }
-                delete_arg_btn.clear();
+                    switch (currentRequest->req_type) {
+                        case RequestType::GET:
+                        case RequestType::DELETE:
+                        case RequestType::OPTIONS: break;
+                        case RequestType::POST:
+                        case RequestType::PATCH:
+                        case RequestType::PUT:
+                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25);
+                            if (ImGui::BeginCombo("##content_type", bodyTypeUIStrings[(int)currentRequest->body_type])) {
+                                for (int n = 0; n < (int)BodyType::_COUNT; n++) {
+                                    if (ImGui::Selectable(bodyTypeUIStrings[n])) {
+                                        currentRequest->body_type = (BodyType)n;
+                                        MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                                    }
+                                }
+                                ImGui::EndCombo();
+                            }
+                            break;
+                        case RequestType::_COUNT: break; // make the compiler happy
+                    }
+                    if (currentRequest->body_type == BodyType::RAW)
+                    {
+                        ImGui::SameLine();
+                        
+                        const char* contentType = currentRequest->headers.findHeaderValue("Content-Type");
+                        int index = HeaderKeyValueCollection::contentTypeToRawBodyTypeIndex(contentType);
+                        const char* rawBodyType = index >= 0 ? rawBodyTypeUIStrings[index] : nullptr;
 
-                if (ImGui::Button("Add Header Arg")) {
-                    currentRequest.headers.headers.push_back(HeaderKeyValue{ .enabled = true });
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Delete all headers") && thread_status != RUNNING) {
-                    currentRequest.headers.headers.clear();
-                }
-
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Body"))
-            {
-                switch (currentRequest.req_type) {
-                    case RequestType::GET:
-                    case RequestType::DELETE:
-                    case RequestType::OPTIONS: break;
-                    case RequestType::POST:
-                    case RequestType::PATCH:
-                    case RequestType::PUT:
-                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25);
-                        if (ImGui::BeginCombo("##content_type", bodyTypeUIStrings[(int)currentRequest.body_type])) {
-                            for (int n = 0; n < (int)BodyType::_COUNT; n++) {
-                                if (ImGui::Selectable(bodyTypeUIStrings[n])) {
-                                    currentRequest.body_type = (BodyType)n;
+                        if (ImGui::BeginCombo("##raw_body_type", rawBodyType))
+                        {
+                            for (int i = 0; i < (int)RawBodyType::_COUNT; i++)
+                            {
+                                if (ImGui::Selectable(rawBodyTypeUIStrings[i])) {
+                                    currentRequest->headers.setHeaderValue("Content-Type", rawBodyTypeStrings[i]);
+                                    MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
                                 }
                             }
                             ImGui::EndCombo();
                         }
-                        break;
-                    case RequestType::_COUNT: break; // make the compiler happy
-                }
-                if (currentRequest.body_type == BodyType::RAW)
-                {
-                    ImGui::SameLine();
-                    
-                    const char* contentType = currentRequest.headers.findHeaderValue("Content-Type");
-                    int index = HeaderKeyValueCollection::contentTypeToRawBodyTypeIndex(contentType);
-                    const char* rawBodyType = index >= 0 ? rawBodyTypeUIStrings[index] : nullptr;
-
-                    if (ImGui::BeginCombo("##raw_body_type", rawBodyType))
-                    {
-                        for (int i = 0; i < (int)RawBodyType::_COUNT; i++)
-                        {
-                            if (ImGui::Selectable(rawBodyTypeUIStrings[i])) {
-                                currentRequest.headers.setHeaderValue("Content-Type", rawBodyTypeStrings[i]);
-                            }
-                        }
-                        ImGui::EndCombo();
                     }
-                }
 
-                if ((currentRequest.req_type == RequestType::POST || currentRequest.req_type == RequestType::PUT || currentRequest.req_type == RequestType::PATCH))
-                {
-                    if (currentRequest.body_type == BodyType::RAW) {
+                    if ((currentRequest->req_type == RequestType::POST || currentRequest->req_type == RequestType::PUT || currentRequest->req_type == RequestType::PATCH))
+                    {
+                        if (currentRequest->body_type == BodyType::RAW) {
 
-                        const char* contentType = currentRequest.headers.findHeaderValue("Content-Type");
-                        bool isJson = contentType != nullptr && strcmp(contentType, "application/json") == 0;
-                        bool isXml = contentType != nullptr && strcmp(contentType, "application/xml") == 0;
-                        const char* label = isJson ? "Input JSON"
-                            : isXml ? "Input XML"
-                            : "Input";
+                            const char* contentType = currentRequest->headers.findHeaderValue("Content-Type");
+                            bool isJson = contentType != nullptr && strcmp(contentType, "application/json") == 0;
+                            bool isXml = contentType != nullptr && strcmp(contentType, "application/xml") == 0;
+                            const char* label = isJson ? "Input JSON"
+                                : isXml ? "Input XML"
+                                : "Input";
 
-                        ImGui::TextUnformatted(label);
-                        if (isJson)
-                        {
-                            rapidjson::Document d;
-                            // TODO: only check for JSON errors on changes instead of every frame
-                            if (d.Parse(currentRequest.input_json.buf_).HasParseError() && currentRequest.input_json.length() > 0) {
-                                ImGui::SameLine();
-                                ImGui::Text("Problems with JSON");
+                            ImGui::TextUnformatted(label);
+                            if (isJson)
+                            {
+                                rapidjson::Document d;
+                                // TODO: only check for JSON errors on changes instead of every frame
+                                if (d.Parse(currentRequest->input_json.buf_).HasParseError() && currentRequest->input_json.length() > 0) {
+                                    ImGui::SameLine();
+                                    ImGui::Text("Problems with JSON");
+                                }
+                            }
+                            int block_height = ImGui::GetContentRegionAvail()[1];
+                            block_height /= 2;
+                            if (ImGui::InputTextMultiline("##input_json", &currentRequest->input_json[0], currentRequest->input_json.capacity(), ImVec2(-1.0f, block_height), ImGuiInputTextFlags_AllowTabInput)) {
+                                MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
                             }
                         }
-                        int block_height = ImGui::GetContentRegionAvail()[1];
-                        block_height /= 2;
-                        ImGui::InputTextMultiline("##input_json", &currentRequest.input_json[0], currentRequest.input_json.capacity(), ImVec2(-1.0f, block_height), ImGuiInputTextFlags_AllowTabInput);
+                        else {
+                            static pg::Vector<int> delete_arg_btn;
+
+                            for (int i=0; i<(int)currentRequest->form_args.size(); i++) {
+                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
+                                char combo_name[32];
+                                sprintf(combo_name, "##combo arg type%d", i);
+                                ImGui::Combo(combo_name, &currentRequest->form_args[i].arg_type, arg_types[(int)currentRequest->req_type], num_arg_types[(int)currentRequest->req_type]);
+                                ImGui::SameLine();
+                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
+                                char arg_name[32];
+                                sprintf(arg_name, "Name##arg name%d", i);
+                                if (ImGui::InputText(arg_name, &currentRequest->form_args[i].name[0], currentRequest->form_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                                    MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                                    processRequest(thread, histories, *currentRequest, thread_status);
+                                }
+                                ImGui::SameLine();
+                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
+                                sprintf(arg_name, "Value##arg name%d", i);
+                                if (ImGui::InputText(arg_name, &currentRequest->form_args[i].value[0], currentRequest->form_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                                    MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                                    processRequest(thread, histories, *currentRequest, thread_status);
+                                }
+                                ImGui::SameLine();
+                                if (currentRequest->form_args[i].arg_type == 1) {
+                                    sprintf(arg_name, "File##arg name%d", i);
+                                    if (ImGui::Button(arg_name)) {
+                                        picking_file = true;
+                                        curr_arg_file = i;
+                                    }
+                                }
+                                ImGui::SameLine();
+                                char btn_name[32];
+                                sprintf(btn_name, "Delete##arg delete%d", i);
+                                if (ImGui::Button(btn_name)) {
+                                    MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                                    if (curr_arg_file == i) {
+                                        curr_arg_file = -1;
+                                        picking_file = false;
+                                    }
+                                    delete_arg_btn.push_back(i);
+                                }
+                            }
+
+                            if (currentRequest->form_args.empty())
+                            {
+                                ImGui::Text("No arguments to show");
+                            }
+                            
+                            if (ImGui::Button("Add Argument")) {
+                                Argument arg;
+                                arg.arg_type = 0;
+                                currentRequest->form_args.push_back(arg);
+                                MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
+                                currentRequest->form_args.clear();
+                                MAKE_TREE_NODE_DIRTY(currentRequestDirtyFlagIndex);
+                            }
+
+                            // delete the args
+                            if (thread_status != RUNNING) {
+                                for (int i=(int)delete_arg_btn.size(); i>0; i--) {
+                                    currentRequest->form_args.erase(currentRequest->form_args.begin()+delete_arg_btn[i-1]);
+                                }
+                            }
+                            delete_arg_btn.clear();
+                        }
+                    }
+
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+
+                
+                ImGui::Text("Result");
+                ImGui::BeginTabBar("resulttabs");
+                if (ImGui::BeginTabItem("Body"))
+                {
+                    if (histories.size() > 0) {
+                        if (selected >= histories.size()) {
+                            selected = (int)histories.size()-1;
+                        }
+                        ImGui::InputTextMultiline("##source", &histories[selected].response.result[0], histories[selected].response.result.capacity(), ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
                     }
                     else {
-                         static pg::Vector<int> delete_arg_btn;
-
-                        for (int i=0; i<(int)currentRequest.form_args.size(); i++) {
-                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
-                            char combo_name[32];
-                            sprintf(combo_name, "##combo arg type%d", i);
-                            ImGui::Combo(combo_name, &currentRequest.form_args[i].arg_type, arg_types[(int)currentRequest.req_type], num_arg_types[(int)currentRequest.req_type]);
-                            ImGui::SameLine();
-                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
-                            char arg_name[32];
-                            sprintf(arg_name, "Name##arg name%d", i);
-                            if (ImGui::InputText(arg_name, &currentRequest.form_args[i].name[0], currentRequest.form_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                                processRequest(thread, histories, currentRequest, thread_status);
-                            ImGui::SameLine();
-                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
-                            sprintf(arg_name, "Value##arg name%d", i);
-                            if (ImGui::InputText(arg_name, &currentRequest.form_args[i].value[0], currentRequest.form_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue))
-                                processRequest(thread, histories, currentRequest, thread_status);
-                            ImGui::SameLine();
-                            if (currentRequest.form_args[i].arg_type == 1) {
-                                sprintf(arg_name, "File##arg name%d", i);
-                                if (ImGui::Button(arg_name)) {
-                                    picking_file = true;
-                                    curr_arg_file = i;
-                                }
-                            }
-                            ImGui::SameLine();
-                            char btn_name[32];
-                            sprintf(btn_name, "Delete##arg delete%d", i);
-                            if (ImGui::Button(btn_name)) {
-                                if (curr_arg_file == i) {
-                                    curr_arg_file = -1;
-                                    picking_file = false;
-                                }
-                                delete_arg_btn.push_back(i);
-                            }
-                        }
-
-                        if (currentRequest.form_args.empty())
-                        {
-                            ImGui::Text("No arguments to show");
-                        }
-                        
-                        if (ImGui::Button("Add Argument")) {
-                            Argument arg;
-                            arg.arg_type = 0;
-                            currentRequest.form_args.push_back(arg);
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
-                            currentRequest.form_args.clear();
-                        }
-
-                        // delete the args
-                        if (thread_status != RUNNING) {
-                            for (int i=(int)delete_arg_btn.size(); i>0; i--) {
-                                currentRequest.form_args.erase(currentRequest.form_args.begin()+delete_arg_btn[i-1]);
-                            }
-                        }
-                        delete_arg_btn.clear();
+                        char blank[] = "";
+                        ImGui::InputTextMultiline("##source", blank, 0, ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
                     }
+                    ImGui::EndTabItem();
                 }
+                if (ImGui::BeginTabItem("Headers"))
+                {
+                    if (histories.size() > 0) {
+                        if (selected >= histories.size()) {
+                            selected = (int)histories.size()-1;
+                        }
 
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
+                        if (ImGui::BeginTable("response_headers", 2)) {
 
-            
-            ImGui::Text("Result");
-            ImGui::BeginTabBar("resulttabs");
-            if (ImGui::BeginTabItem("Body"))
-            {
-                if (histories.size() > 0) {
-                    if (selected >= histories.size()) {
-                        selected = (int)histories.size()-1;
-                    }
-                    ImGui::InputTextMultiline("##source", &histories[selected].response.result[0], histories[selected].response.result.capacity(), ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
-                }
-                else {
-                    char blank[] = "";
-                    ImGui::InputTextMultiline("##source", blank, 0, ImVec2(-1.0f, ImGui::GetContentRegionAvail()[1]), ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
-                }
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Headers"))
-            {
-                if (histories.size() > 0) {
-                    if (selected >= histories.size()) {
-                        selected = (int)histories.size()-1;
-                    }
-
-                    if (ImGui::BeginTable("response_headers", 2)) {
-
-                        ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
-                        ImGui::TableNextColumn();
-                        ImGui::Text("Name");
-                        ImGui::TableNextColumn();
-                        ImGui::Text("Value");
-
-                        int i = 0;
-                        for (auto itr = histories[selected].response.result_headers.headers.begin();
-                            itr != histories[selected].response.result_headers.headers.end();
-                            ++itr)
-                        {
-                            ImGui::PushID(i);
-                            ImGui::TableNextRow();
+                            ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
                             ImGui::TableNextColumn();
-                            ImGui::InputText("##name", (*itr).key.buf_, (*itr).key.capacity(), ImGuiInputTextFlags_ReadOnly);
+                            ImGui::Text("Name");
                             ImGui::TableNextColumn();
-                            ImGui::InputText("##value", (*itr).value.buf_, (*itr).value.capacity(), ImGuiInputTextFlags_ReadOnly);
-                            ImGui::PopID();
-                        
-                            i++;
+                            ImGui::Text("Value");
+
+                            int i = 0;
+                            for (auto itr = histories[selected].response.result_headers.headers.begin();
+                                itr != histories[selected].response.result_headers.headers.end();
+                                ++itr)
+                            {
+                                ImGui::PushID(i);
+                                ImGui::TableNextRow();
+                                ImGui::TableNextColumn();
+                                ImGui::InputText("##name", (*itr).key.buf_, (*itr).key.capacity(), ImGuiInputTextFlags_ReadOnly);
+                                ImGui::TableNextColumn();
+                                ImGui::InputText("##value", (*itr).value.buf_, (*itr).value.capacity(), ImGuiInputTextFlags_ReadOnly);
+                                ImGui::PopID();
+                            
+                                i++;
+                            }
+
+                            ImGui::EndTable();
                         }
-
-                        ImGui::EndTable();
                     }
-                }
-                else {
+                    else {
 
-                }
+                    }
 
-                ImGui::EndTabItem();
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
             }
-            ImGui::EndTabBar();
 
             ImGui::EndChild();
             ImGui::EndGroup();
@@ -891,11 +945,11 @@ int main(int argc, char* argv[])
                 ImVec2 pos = ImGui::GetCursorScreenPos();
                 ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x, pos.y), ImVec2(pos.x + ImGui::GetContentRegionAvail()[0], pos.y + ImGui::GetTextLineHeight()), IM_COL32(100,100,0,50));
                 if (ImGui::MenuItem(curr_files[i].buf_, NULL)) {
-                    if (curr_arg_file >= 0 && curr_arg_file < currentRequest.form_args.size()) {
+                    if (curr_arg_file >= 0 && curr_arg_file < currentRequest->form_args.size()) {
                         pg::String filename = curr_dir;
                         filename.append("/");
                         filename.append(curr_files[i]);
-                        currentRequest.form_args[curr_arg_file].value = filename;
+                        currentRequest->form_args[curr_arg_file].value = filename;
                     }                    
 
                     picking_file = false;

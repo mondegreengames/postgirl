@@ -10,14 +10,13 @@ struct CollectionNode
     int requestIndex;
     int nameIndex;
     int authIndex;
+    int dirtyIndex;
 
     int parentIndex;
     int firstChildIndex;
     int numChildren;
     int numDescendants;
 };
-
-
 
 class CollectionTree
 {
@@ -32,6 +31,9 @@ public:
     DynamicBitSet namesAlive;
     DynamicBitSet requestsAlive;
     DynamicBitSet authsAlive;
+
+    DynamicBitSet nodesDirty;
+    DynamicBitSet nodesDirtyAlive;
 
     void init(const char* name, const Auth* auth)
     {
@@ -49,10 +51,15 @@ public:
             authsAlive.set(authIndex, true);
         }
 
+        int dirtyIndex = 0;
+        nodesDirty.set(dirtyIndex, false);
+        nodesDirtyAlive.set(dirtyIndex, true);
+
         CollectionNode node = {
             .requestIndex = InvalidIndex,
             .nameIndex = nameIndex,
             .authIndex = authIndex,
+            .dirtyIndex = dirtyIndex,
             .parentIndex = InvalidIndex,
             .firstChildIndex = InvalidIndex,
             .numChildren = 0,
@@ -107,10 +114,14 @@ public:
             requestsAlive.set(requestIndex, true);
         }
 
+        int dirtyIndex = nodesDirtyAlive.findFirstWithValue(false);
+        nodesDirtyAlive.set(dirtyIndex, true);
+
         CollectionNode node = {
             .requestIndex = requestIndex,
             .nameIndex = nameIndex,
             .authIndex = authIndex,
+            .dirtyIndex = dirtyIndex,
             .parentIndex = parentIndex,
             .firstChildIndex = InvalidIndex,
             .numChildren = 0,
@@ -142,6 +153,7 @@ public:
             const int nameIndex = nodes[i].nameIndex;
             const int authIndex = nodes[i].authIndex;
             const int requestIndex = nodes[i].nameIndex;
+            const int dirtyIndex = nodes[i].dirtyIndex;
 
             if (nameIndex != InvalidIndex) {
                 namesAlive.set(nameIndex, false);
@@ -152,6 +164,8 @@ public:
             if (requestIndex != InvalidIndex) {
                 requestsAlive.set(requestIndex, false);
             }
+
+            nodesDirtyAlive.set(dirtyIndex, false);
         }
 
         nodes.erase(nodes.begin() + index, nodes.begin() + index + numDescendants + 1);
@@ -165,6 +179,22 @@ public:
                 cursor = nodes[cursor].parentIndex;
             }
         }
+    }
+
+    void setDirty(int dirtyIndex, bool dirty) {
+        if (dirtyIndex != InvalidIndex) {
+            nodesDirtyAlive.set(dirtyIndex, true);
+            nodesDirty.set(dirtyIndex, dirty);
+        }
+    }
+
+    bool isDirty(int dirtyIndex) {
+        if (dirtyIndex == InvalidIndex || nodesDirtyAlive.isSet(dirtyIndex) == false) {
+            return false;
+        }
+
+        const bool isDirty = nodesDirty.isSet(dirtyIndex);
+        return isDirty;
     }
 };
 
@@ -222,4 +252,6 @@ bool buildTreeFromCollection(const Collection& collection, CollectionTree& resul
             return false;
         }
     }
+
+    return true;
 }

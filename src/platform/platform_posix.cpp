@@ -45,6 +45,7 @@ namespace Platform
         tm t;
         int ms = 0;
         strptime(timestamp, "%Y-%m-%dT%H:%M:%S", &t);
+        t.tm_isdst = -1;
 
         const char* dot = strchr(timestamp, '.');
         if (dot != nullptr)
