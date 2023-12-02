@@ -7,23 +7,36 @@
 
 struct CollectionNode
 {
+    unsigned int id;
     int requestIndex;
     int nameIndex;
     int authIndex;
-    int dirtyIndex;
 
     int parentIndex;
     int firstChildIndex;
     int numChildren;
     int numDescendants;
+
+    bool isDirty;
 };
 
 class CollectionTree
 {
+    // hash table
+    struct {
+        int capacity;
+        DynamicBitSet alive;
+        unsigned int* ids;
+        unsigned int* indices;
+        bool needsRebuilding;
+    } nodeHashTable;
+
 public:
 
+    static constexpr unsigned int InvalidId = 0;
     static constexpr int InvalidIndex = -1;
 
+    unsigned int nextId;
     pg::Vector<pg::String> names;
     pg::Vector<Request> requests;
     pg::Vector<Auth> auths;
@@ -32,11 +45,10 @@ public:
     DynamicBitSet requestsAlive;
     DynamicBitSet authsAlive;
 
-    DynamicBitSet nodesDirty;
-    DynamicBitSet nodesDirtyAlive;
-
     void init(const char* name, const Auth* auth)
     {
+        nextId = 1;
+
         int nameIndex = InvalidIndex;
         if (name != nullptr) {
             nameIndex = names.Size;
@@ -51,24 +63,41 @@ public:
             authsAlive.set(authIndex, true);
         }
 
-        int dirtyIndex = 0;
-        nodesDirty.set(dirtyIndex, false);
-        nodesDirtyAlive.set(dirtyIndex, true);
-
         CollectionNode node = {
+            .id = nextId++,
             .requestIndex = InvalidIndex,
             .nameIndex = nameIndex,
             .authIndex = authIndex,
-            .dirtyIndex = dirtyIndex,
             .parentIndex = InvalidIndex,
             .firstChildIndex = InvalidIndex,
             .numChildren = 0,
             .numDescendants = 0,
+            .isDirty = false,
         };
         nodes.push_back(node);
+
+        nodeHashTable.capacity = 0;
+        nodeHashTable.ids = nullptr;
+        nodeHashTable.indices = nullptr;
+        nodeHashTable.needsRebuilding = true;
     }
 
-    int add(const char* name, const Request* request, const Auth* auth, int parentIndex)
+    void deinit()
+    {
+        if (nodeHashTable.capacity > 0) {
+            if (nodeHashTable.ids != nullptr) {
+                free(nodeHashTable.ids);
+                nodeHashTable.ids = nullptr;
+            }
+            if (nodeHashTable.indices != nullptr) {
+                free(nodeHashTable.indices);
+                nodeHashTable.indices = nullptr;
+            }
+        }
+        nodeHashTable.capacity = 0;
+    }
+
+    int add(const char* name, const Request* request, const Auth* auth, int parentIndex, /* out */ unsigned int* id)
     {
         if (parentIndex < 0 || parentIndex >= nodes.Size) {
             return InvalidIndex;
@@ -86,7 +115,6 @@ public:
             }
             namesAlive.set(nameIndex, true);
         }
-
 
         int authIndex = InvalidIndex;
         if (auth != nullptr) {
@@ -114,18 +142,16 @@ public:
             requestsAlive.set(requestIndex, true);
         }
 
-        int dirtyIndex = nodesDirtyAlive.findFirstWithValue(false);
-        nodesDirtyAlive.set(dirtyIndex, true);
-
         CollectionNode node = {
+            .id = nextId,
             .requestIndex = requestIndex,
             .nameIndex = nameIndex,
             .authIndex = authIndex,
-            .dirtyIndex = dirtyIndex,
             .parentIndex = parentIndex,
             .firstChildIndex = InvalidIndex,
             .numChildren = 0,
             .numDescendants = 0,
+            .isDirty = false,
         };
         int index = parentIndex + nodes[parentIndex].numDescendants + 1;
         nodes.insert(nodes.begin() + index, node);
@@ -136,6 +162,13 @@ public:
             nodes[cursor].numDescendants++;
             cursor = nodes[cursor].parentIndex;
         }
+
+        if (id != nullptr) {
+            *id = nextId;
+        }
+        nextId++;
+
+        nodeHashTable.needsRebuilding = true;
 
         return index;
     }
@@ -153,7 +186,6 @@ public:
             const int nameIndex = nodes[i].nameIndex;
             const int authIndex = nodes[i].authIndex;
             const int requestIndex = nodes[i].nameIndex;
-            const int dirtyIndex = nodes[i].dirtyIndex;
 
             if (nameIndex != InvalidIndex) {
                 namesAlive.set(nameIndex, false);
@@ -164,8 +196,6 @@ public:
             if (requestIndex != InvalidIndex) {
                 requestsAlive.set(requestIndex, false);
             }
-
-            nodesDirtyAlive.set(dirtyIndex, false);
         }
 
         nodes.erase(nodes.begin() + index, nodes.begin() + index + numDescendants + 1);
@@ -179,22 +209,84 @@ public:
                 cursor = nodes[cursor].parentIndex;
             }
         }
+
+        nodeHashTable.needsRebuilding = true;
     }
 
-    void setDirty(int dirtyIndex, bool dirty) {
-        if (dirtyIndex != InvalidIndex) {
-            nodesDirtyAlive.set(dirtyIndex, true);
-            nodesDirty.set(dirtyIndex, dirty);
+    CollectionNode* getNodeById(unsigned int id)
+    {
+        if (nodeHashTable.needsRebuilding) {
+            rebuildIndexHash();
+        }
+
+        const unsigned int hash = (id * 0xDEECE66D);
+
+        for (unsigned int i = 0; i < nodeHashTable.capacity; i++) {
+            const int index = (hash + i) % nodeHashTable.capacity;
+            if (nodeHashTable.alive.isSet(index) == true) {
+                if (nodeHashTable.ids[index] == id) {
+                    CollectionNode* node = &nodes[nodeHashTable.indices[index]];
+                    return node;
+                }
+            }
+            else {
+                break;
+            }
+        }
+                
+        return nullptr;
+    }
+
+    void setDirty(int id, bool dirty) {
+        CollectionNode* node = getNodeById(id);
+        if (node != nullptr) {
+            node->isDirty = dirty;
         }
     }
 
-    bool isDirty(int dirtyIndex) {
-        if (dirtyIndex == InvalidIndex || nodesDirtyAlive.isSet(dirtyIndex) == false) {
-            return false;
+    bool isDirty(int id) {
+        CollectionNode* node = getNodeById(id);
+        if (node != nullptr) {
+            return node->isDirty;
         }
 
-        const bool isDirty = nodesDirty.isSet(dirtyIndex);
-        return isDirty;
+        return false;
+    }
+
+    void rebuildIndexHash() {
+        if (nodeHashTable.needsRebuilding == false) {
+            return;
+        }
+
+        const int minCapacity = nodes.Size * 3 / 2;
+        if (nodeHashTable.capacity < minCapacity) {
+            nodeHashTable.ids = (unsigned int*)realloc(nodeHashTable.ids, minCapacity * sizeof(unsigned int));
+            nodeHashTable.indices = (unsigned int*)realloc(nodeHashTable.indices, minCapacity * sizeof(unsigned int));
+            nodeHashTable.capacity = minCapacity;
+        }
+        nodeHashTable.alive.setAll(false);
+
+        for (int i = 0; i < nodes.Size; i++) {
+            const unsigned int id = nodes[i].id;
+            const unsigned int hash = (id * 0xDEECE66D);
+
+            bool inserted = false;
+            for (int j = 0; j < nodeHashTable.capacity; j++) {
+                const int index = (hash + j) % nodeHashTable.capacity;
+                if (nodeHashTable.alive.isSet(index) == false) {
+                    nodeHashTable.alive.set(index, true);
+                    nodeHashTable.ids[index] = id;
+                    nodeHashTable.indices[index] = i;
+
+                    inserted = true;
+                    break;
+                }
+            }
+
+            assert(inserted == true && "If inserted == false then that means we were unable to insert into the hash table, which should never happen!");
+        }
+
+        nodeHashTable.needsRebuilding = false;
     }
 };
 
@@ -215,7 +307,7 @@ bool addToTree(int parentIndex, const Item* item, CollectionTree& tree)
         req = &std::get<Request>(item->data);
     }
 
-    int index = tree.add(name, req, auth, parentIndex);
+    int index = tree.add(name, req, auth, parentIndex, nullptr);
     if (index == CollectionTree::InvalidIndex) {
         return false;
     }
