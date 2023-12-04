@@ -223,7 +223,11 @@ bool deconstructUrl(const char* url, pg::Vector<Argument>& args)
         rest += 1;
 
     char* token;
+#ifdef _WIN32
+    while ((token = strtok_s(rest, "&", &rest)))
+#else
     while((token = strtok_r(rest, "&", &rest)))
+#endif
     {
         Argument arg;
 

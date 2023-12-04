@@ -146,9 +146,12 @@ int renderCollections(CollectionTree& tree, int currentSelectedId)
 
         bool nodeOpen;
         if (itr->requestIndex != CollectionTree::InvalidIndex) {
+            const int totalWidth = ImGui::GetWindowWidth();
+            const int frameHeight = ImGui::GetFrameHeight();
+
             Request* req = &tree.requests[itr->requestIndex];
             const bool selected = currentSelectedId == itr->id;
-            const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | (selected ? ImGuiTreeNodeFlags_Selected : 0);
+            const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_AllowItemOverlap | (selected ? ImGuiTreeNodeFlags_Selected : 0);
             nodeOpen = ImGui::TreeNodeEx(itr, flags, "%s %s%s", RequestTypeToString(req->req_type), name, dirtyIndicator);
 
             if (ImGui::IsItemClicked()) {
@@ -159,7 +162,7 @@ int renderCollections(CollectionTree& tree, int currentSelectedId)
         }
         else {
             const bool selected = currentSelectedId == itr->id;
-            nodeOpen = ImGui::TreeNodeEx(itr, (selected ? ImGuiTreeNodeFlags_Selected : 0), "%s%s", name, dirtyIndicator);
+            nodeOpen = ImGui::TreeNodeEx(itr, ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | (selected ? ImGuiTreeNodeFlags_Selected : 0), "%s%s", name, dirtyIndicator);
             if (ImGui::IsItemClicked()) {
                 selectedNodeId = itr->id;
             }
@@ -505,6 +508,43 @@ int main(int argc, char* argv[])
         }
         if (ImGui::BeginTabItem("Collections"))
         {
+            const CollectionNode* node = tree.getNodeById(selectedNodeId);
+            const bool isNodeSelected = node != nullptr;
+            const bool isRequest = isNodeSelected && node->requestIndex != CollectionTree::InvalidIndex;
+
+            // TODO: remove once these buttons are implemented
+            ImGui::BeginDisabled();
+
+            if (isNodeSelected == false) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::Button("Discard changes")) {
+                // TODO
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Delete")) {
+                // TODO
+            }
+            ImGui::SameLine();
+            if (isNodeSelected == false) {
+                ImGui::EndDisabled();
+            }
+            if (isNodeSelected == false || isRequest) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::Button("Add folder")) {
+                // TODO
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Add request")) {
+                // TODO
+            }
+            if (isNodeSelected == false || isRequest) {
+                ImGui::EndDisabled();
+            }
+
+            ImGui::EndDisabled();
+
             int dirtyFlagIndex;
             int selectedId = renderCollections(tree, selectedNodeId);
 
@@ -570,12 +610,14 @@ int main(int argc, char* argv[])
                     saveHistory(histories, "history.json", settings.PrettifyCollectionsJson);
                     update_hist_search = true;
                 }
+            }
 
-                ImGui::BeginTabBar("requesttabs");
-                if (ImGui::BeginTabItem("Params"))
-                {
-                    static pg::Vector<int> delete_arg_btn;
-                    
+            ImGui::BeginTabBar("requesttabs");
+            if (ImGui::BeginTabItem("Params"))
+            {
+                static pg::Vector<int> delete_arg_btn;
+                
+                if (currentRequest != nullptr) {
                     bool argsDirty = false;
                     for (int i=0; i<(int)currentRequest->query_args.size(); i++) {
                         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
@@ -639,15 +681,50 @@ int main(int argc, char* argv[])
                         currentRequest->url = buildUrl(currentRequest->url.buf_, currentRequest->query_args);
                         tree.setDirty(selectedNodeId, true);
                     }
-
-                    ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Authorization"))
-                {
-                    ImGui::Text("TODO...");
-
-                    ImGui::EndTabItem();
+                else {
+                    ImGui::Text("TODO: show folder-level parameters/variables");
                 }
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Authorization"))
+            {
+                if (currentRequest != nullptr) {
+                    const char* previewText = nullptr;
+                    if ((int)currentRequest->auth.type >= 0 && (int)currentRequest->auth.type <= (int)AuthType::_LAST) {
+                        previewText = authTypeUIStrings[(int)currentRequest->auth.type];
+                    }
+
+                    if (ImGui::BeginCombo("Type", previewText)) {
+                        
+                        for (int i = 0; i < (int)AuthType::_COUNT; i++) {
+                            const bool selected = currentRequest->auth.type == (AuthType)i;
+                            ImGui::Selectable(authTypeUIStrings[i], selected);
+                        }
+
+                        ImGui::EndCombo();
+                    }
+
+                    for (int i=0; i< (int)currentRequest->auth.attributes.size(); i++) {
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
+                        char arg_name[32];
+                        sprintf(arg_name, "Name##auth arg name%d", i);
+                        if (ImGui::InputText(arg_name, &currentRequest->auth.attributes[i].key[0], currentRequest->auth.attributes[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            // TODO
+                        }
+                        ImGui::SameLine();
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
+                        sprintf(arg_name, "Value##auth arg value%d", i);
+                        if (ImGui::InputText(arg_name, &currentRequest->auth.attributes[i].value[0], currentRequest->auth.attributes[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            // TODO
+                        }
+                    }
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            if (currentRequest != nullptr) {
                 if (ImGui::BeginTabItem("Headers"))
                 {
                     static pg::Vector<int> delete_arg_btn;
@@ -841,9 +918,10 @@ int main(int argc, char* argv[])
 
                     ImGui::EndTabItem();
                 }
-                ImGui::EndTabBar();
+            }
+            ImGui::EndTabBar();
 
-                
+            if (currentRequest != nullptr) {
                 ImGui::Text("Result");
                 ImGui::BeginTabBar("resulttabs");
                 if (ImGui::BeginTabItem("Body"))
