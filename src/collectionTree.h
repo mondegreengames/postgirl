@@ -35,7 +35,9 @@ public:
 
     static constexpr unsigned int InvalidId = 0;
     static constexpr int InvalidIndex = -1;
+    static constexpr int TreeIdShift = 16;
 
+    unsigned int treeId;
     unsigned int nextId;
     pg::Vector<pg::String> names;
     pg::Vector<Request> requests;
@@ -45,9 +47,10 @@ public:
     DynamicBitSet requestsAlive;
     DynamicBitSet authsAlive;
 
-    void init(const char* name, const Auth* auth)
+    void init(const char* name, int id, const Auth* auth)
     {
         nextId = 1;
+        treeId = id;
 
         int nameIndex = InvalidIndex;
         if (name != nullptr) {
@@ -64,7 +67,7 @@ public:
         }
 
         CollectionNode node = {
-            .id = nextId++,
+            .id = (treeId << TreeIdShift) + nextId++,
             .requestIndex = InvalidIndex,
             .nameIndex = nameIndex,
             .authIndex = authIndex,
@@ -143,7 +146,7 @@ public:
         }
 
         CollectionNode node = {
-            .id = nextId,
+            .id = (treeId << TreeIdShift) + nextId,
             .requestIndex = requestIndex,
             .nameIndex = nameIndex,
             .authIndex = authIndex,
@@ -164,7 +167,7 @@ public:
         }
 
         if (id != nullptr) {
-            *id = nextId;
+            *id = (treeId << TreeIdShift) + nextId;
         }
         nextId++;
 
@@ -324,7 +327,7 @@ bool addToTree(int parentIndex, const Item* item, CollectionTree& tree)
     return true;
 }
 
-bool buildTreeFromCollection(const Collection& collection, CollectionTree& result)
+bool buildTreeFromCollection(const Collection& collection, int treeId, CollectionTree& result)
 {
     const char* name = nullptr;
     if (collection.name.buf_[0] != 0) {
@@ -336,7 +339,7 @@ bool buildTreeFromCollection(const Collection& collection, CollectionTree& resul
         auth = &collection.auth;
     }
 
-    result.init(name, auth);
+    result.init(name, treeId, auth);
 
     for (auto itr = collection.root.begin(); itr != collection.root.end(); ++itr) {
 
