@@ -34,6 +34,18 @@ bool parseAuth(const rapidjson::Value& auth, Auth& result)
 
                                 if (value.IsString())
                                     attrib.value = value.GetString();
+                                else {
+                                    if (authData[i].HasMember("type") && authData[i]["type"].IsString() && strcmp(authData[i]["type"].GetString(), "any") == 0) {
+                                        if (value.IsObject()) {
+                                            for (auto itr = value.MemberBegin(); itr != value.MemberEnd(); ++itr) {
+                                                // TODO: store all the values, not this "last one wins" stuff
+                                                if ((*itr).value.IsString()) {
+                                                    attrib.value = (*itr).value.GetString();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 // TODO: are there other types we need to support, like booleans?
 
                                 result.attributes.push_back(attrib);
@@ -157,7 +169,7 @@ bool parseItem(const rapidjson::Value& item, Item& result)
     {
         const auto& requestJson = item["request"];
             
-        Request request;
+        Request request = {};
         if (parseRequest(requestJson, request))
         {
             result.name = name == nullptr ? pg::String("") : pg::String(name);

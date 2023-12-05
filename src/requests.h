@@ -168,6 +168,17 @@ struct Auth
     Auth()
         : type(AuthType::NONE)
     {}
+
+    const char* findAttributeValue(const char* name) const
+    {
+        for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
+            if (strcmp(itr->key.buf_, name) == 0) {
+                return itr->value.buf_;
+            }
+        }
+
+        return nullptr;
+    }
 };
 
 typedef struct Request
@@ -220,12 +231,12 @@ pg::String buildUrl(const char* baseUrl, const pg::Vector<Argument>& args);
 bool deconstructUrl(const char* url, pg::Vector<Argument>& args);
 
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType,  
-                      pg::String url, pg::Vector<Argument> args, pg::Vector<HeaderKeyValue> headers, 
+                      pg::String url, pg::Vector<Argument> args, pg::Vector<HeaderKeyValue> headers, Auth authentication,
                       BodyType contentType, pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code);
 
 void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
                       pg::String url, pg::Vector<Argument> query_args, pg::Vector<Argument> form_args,
-                      pg::Vector<HeaderKeyValue> headers, 
+                      pg::Vector<HeaderKeyValue> headers, Auth authentication,
                       BodyType contentType, const pg::String& inputJson, 
                       pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code);
 

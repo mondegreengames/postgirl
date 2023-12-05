@@ -61,6 +61,7 @@ static size_t read_callback(void *dest, size_t size, size_t nmemb, void *userp)
   return 0; /* no more data left to deliver */ 
 }
 
+
 typedef struct MemoryStruct {
     MemoryStruct() { memory = (char*)malloc(1); size=0; };
     
@@ -262,8 +263,21 @@ const char* findContentType(const pg::Vector<Argument>& headers)
     return nullptr;
 }
 
+void addAuthentication(CURL* curl, const Auth& authentication)
+{
+    if (authentication.type == AuthType::BASIC) {
+        const char* username = authentication.findAttributeValue("username");
+        const char* password = authentication.findAttributeValue("password");
+
+        curl_easy_setopt(curl, CURLOPT_USERNAME, username);
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, password);
+        curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+    }
+    // TODO: The rest
+}
+
 void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType, pg::String url,
-        pg::Vector<Argument> args, pg::Vector<HeaderKeyValue> headers, 
+        pg::Vector<Argument> args, pg::Vector<HeaderKeyValue> headers, Auth authentication,
         BodyType contentTypeEnum, pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
 { 
     CURLcode res;
@@ -303,6 +317,8 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
             return;
         }
     }
+
+    addAuthentication(curl, authentication);
     
     curl_easy_setopt(curl, CURLOPT_URL, url.buf_);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
@@ -335,7 +351,7 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
 
 void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
                       pg::String url, pg::Vector<Argument> query_args, pg::Vector<Argument> form_args, 
-                      pg::Vector<HeaderKeyValue> headers, 
+                      pg::Vector<HeaderKeyValue> headers, Auth authentication,
                       BodyType contentTypeEnum, const pg::String& inputJson, 
                       pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
 { 
@@ -362,7 +378,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
         return;
     }
 
-    struct WriteThis wt;
+    struct WriteThis wt = {};
     if (contentTypeEnum == BodyType::RAW) {
         wt.readptr = inputJson.buf_;
         wt.sizeleft = inputJson.length();
@@ -384,19 +400,47 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
     curl = curl_easy_init();
     if(curl) {
 
-        for (int i=0; i<form_args.size(); i++) {
-            if (form_args[i].arg_type == 1)
-            {
+        pg::String formBuffer;
+
+        if (contentTypeEnum == BodyType::MULTIPART_FORMDATA) {
+            for (int i = 0; i < form_args.size(); i++) {
                 if (form == NULL) {
-                    /* Create the form */ 
+                    /* Create the form */
                     form = curl_mime_init(curl);
                 }
-      
-                /* Fill in the file upload field */ 
+
+                /* Fill in the file upload field */
                 field = curl_mime_addpart(form);
                 curl_mime_name(field, form_args[i].name.buf_);
-                curl_mime_filedata(field, form_args[i].value.buf_);
+                if (form_args[i].arg_type == 1)
+                    curl_mime_filedata(field, form_args[i].value.buf_);
+                else
+                    curl_mime_data(field, form_args[i].value.buf_, CURL_ZERO_TERMINATED);
             }
+        }
+        else if (contentTypeEnum == BodyType::RAW || contentTypeEnum == BodyType::URL_ENCODED) {
+
+            if (contentTypeEnum == BodyType::URL_ENCODED) {
+                for (int i = 0; i < form_args.Size; i++) {
+                    if (i > 0) {
+                        formBuffer.append("&");
+                    }
+                    formBuffer.append(form_args[i].name.buf_);
+                    formBuffer.append("=");
+                    formBuffer.append(form_args[i].value.buf_); // TODO: url encode
+                }
+
+                wt.readptr = formBuffer.buf_;
+                wt.sizeleft = formBuffer.length();
+            }
+            else {
+                wt.readptr = inputJson.buf_;
+                wt.sizeleft = inputJson.length();
+            }
+
+            curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
+            curl_easy_setopt(curl, CURLOPT_READDATA, &wt);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)wt.sizeleft);
         }
 
         url = buildUrl(url.buf_, query_args);
@@ -424,6 +468,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
         }
         curl_easy_setopt(curl, CURLOPT_URL, url.buf_);
 
+        addAuthentication(curl, authentication);
 
         if (reqType == RequestType::POST) {
             curl_easy_setopt(curl, CURLOPT_POST, 1L);
@@ -432,8 +477,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
         } else {
             curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
         }
-        curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
-        curl_easy_setopt(curl, CURLOPT_READDATA, &wt);
+        
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
         curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback);
@@ -442,7 +486,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
         if (form != NULL) {
             curl_easy_setopt(curl, CURLOPT_MIMEPOST, form);
         }
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)wt.sizeleft);
+        
 
         res = curl_easy_perform(curl);
         long resp_code;

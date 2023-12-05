@@ -42,6 +42,7 @@ void processRequest(std::thread& thread,
         return;
     History hist;
     hist.request.url = currentRequest.url;
+    hist.request.auth = currentRequest.auth;
     hist.request.query_args = currentRequest.query_args;
     hist.request.form_args = currentRequest.form_args;
     hist.request.headers = currentRequest.headers;
@@ -68,7 +69,8 @@ void processRequest(std::thread& thread,
                 currentRequest.req_type, 
                 new_history.request.url, 
                 new_history.request.query_args, 
-                new_history.request.headers.headers, 
+                new_history.request.headers.headers,
+                new_history.request.auth,
                 currentRequest.body_type, 
                 std::ref(new_history.response.result), 
                 std::ref(new_history.response.result_headers.headers), 
@@ -83,7 +85,8 @@ void processRequest(std::thread& thread,
                 new_history.request.url, 
                 new_history.request.query_args, 
                 new_history.request.form_args, 
-                new_history.request.headers.headers, 
+                new_history.request.headers.headers,
+                new_history.request.auth,
                 currentRequest.body_type, 
                 new_history.request.input_json, 
                 std::ref(new_history.response.result), 
@@ -552,7 +555,7 @@ int main(int argc, char* argv[])
             ImGui::EndDisabled();
 
             for (int i = 0; i < trees.Size; i++) {
-                int selectedId = renderCollections(trees[i], selectedTree, selectedId);
+                int selectedId = renderCollections(trees[i], selectedTree, selectedNodeId);
 
                 if (selectedId != CollectionTree::InvalidId) {
                     selectedTree = &trees[i];
@@ -737,6 +740,41 @@ int main(int argc, char* argv[])
                         sprintf(arg_name, "Value##auth arg value%d", i);
                         if (ImGui::InputText(arg_name, &currentAuth->attributes[i].value[0], currentAuth->attributes[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             // TODO
+                        }
+                    }
+
+                    // TODO: this is temporary, just to have the minimum functionality needed to generate an OAuth2 token
+                    if (currentAuth->type == AuthType::OAUTH2) {
+                        const char* grantType = currentAuth->findAttributeValue("grant_type");
+                        if (strcmp(grantType, "client_credentials") == 0) {
+
+                            const char* tokenUrl = currentAuth->findAttributeValue("accessTokenUrl");
+                            const char* clientId = currentAuth->findAttributeValue("clientId");
+                            const char* clientSecret = currentAuth->findAttributeValue("clientSecret");
+
+                            if (tokenUrl != nullptr && clientId != nullptr && clientSecret != nullptr) {
+                                if (ImGui::Button("Get token")) {
+                                    const char* audience = currentAuth->findAttributeValue("audience");
+
+                                    Auth tokenAuth;
+                                    tokenAuth.type = AuthType::BASIC;
+                                    tokenAuth.attributes.push_back(AuthAttribute{ .key = "username", .value = clientId });
+                                    tokenAuth.attributes.push_back(AuthAttribute{ .key = "password", .value = clientSecret });
+
+                                    Request tokenRequest;
+                                    tokenRequest.auth = tokenAuth;
+                                    tokenRequest.url = tokenUrl;
+                                    tokenRequest.req_type = RequestType::POST;
+                                    tokenRequest.body_type = BodyType::URL_ENCODED;
+                                    tokenRequest.form_args.push_back(Argument{ .name = "grant_type", .value = grantType, .arg_type = 0 });
+
+                                    if (audience != nullptr) {
+                                        tokenRequest.form_args.push_back(Argument{ .name = "audience", .value = audience, .arg_type = 0 });
+                                    }
+
+                                    processRequest(thread, histories, tokenRequest, thread_status);
+                                }
+                            }
                         }
                     }
                 }
