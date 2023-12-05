@@ -62,12 +62,28 @@ public:
                 
             static_assert(sizeof(size_t) == 4 || sizeof(size_t) == 8, "size_t must be either 4 or 8 bytes long");
             if (sizeof(size_t) == 4) {
+#ifdef _WIN32
+                unsigned long index;
+                if (_BitScanForward(&index, bit) == 0) {
+                    index = 0;
+                }
+                int result = i * wordSizeInBits + index;
+#else
                 int result =  i * wordSizeInBits + __builtin_ffs(bit) - 1;
+#endif
                 assert(isSet(result) == value);
                 return result;
             }
             if (sizeof(size_t) == 8) {
+#ifdef _WIN32
+                unsigned long index;
+                if (_BitScanForward64(&index, bit) == 0) {
+                    index = 0;
+                }
+                int result = i * wordSizeInBits + index;
+#else
                 int result = i * wordSizeInBits + __builtin_ffsl(bit) - 1;
+#endif
                 assert(isSet(result) == value);
                 return result;
             }

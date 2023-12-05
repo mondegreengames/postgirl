@@ -38,6 +38,14 @@ bool Settings::Save(const char* filename, const Settings& settings)
 
     document.AddMember("settings", root, allocator);
 
+    // add collections
+    rapidjson::Value collections(rapidjson::kArrayType);
+    for (auto itr = settings.CollectionList.begin(); itr != settings.CollectionList.end(); ++itr) {
+        rapidjson::Value value;
+        value.SetString(itr->buf_, allocator);
+        collections.PushBack(value, allocator);
+    }
+    document.AddMember("collections", collections, allocator);
 
     rapidjson::StringBuffer strbuf;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(strbuf);
@@ -60,7 +68,7 @@ bool Settings::Load(const char* filename, Settings& settings)
     FILE *fp = fopen(filename, "rb");
     if (fp == nullptr) return false;
 
-    char readBuffer[1024 * 64];
+    static char readBuffer[1024 * 64];
     rapidjson::FileReadStream stream(fp, readBuffer, sizeof(readBuffer));
 
     rapidjson::Document document;
@@ -109,6 +117,20 @@ bool Settings::Load(const char* filename, Settings& settings)
         if (fontSize.IsNumber())
         {
             settings.FontSize = fontSize.GetFloat();
+        }
+    }
+
+    // load collections
+    if (document.HasMember("collections")) {
+        const auto& collections = document["collections"];
+
+        if (collections.IsArray()) {
+            for (int i = 0; i < collections.Size(); i++) {
+                const auto& collection = collections[i];
+                if (collection.IsString()) {
+                    settings.CollectionList.push_back(collection.GetString());
+                }
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 #pragma once
 #include "pgstring.h"
+#include "pgvector.h"
 #include <cstring>
 
 #define DEFINE_THEMES \
@@ -20,6 +21,7 @@ struct Settings
     ThemeType Theme;
     pg::String Font;
     float FontSize;
+    pg::Vector<pg::String> CollectionList;
 
     Settings()
     {

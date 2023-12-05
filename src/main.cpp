@@ -331,8 +331,14 @@ int main(int argc, char* argv[])
     }
     bool update_hist_search = true; // used to init stuff on first run
 
+    // TODO: support more than 1 collection
+    const char* collectionName = "collections.json";
+    if (settings.CollectionList.Size > 0) {
+        collectionName = settings.CollectionList[0].buf_;
+    }
+
     Collection collection;
-    Collection::Load("collections.json", collection);
+    Collection::Load(collectionName, collection);
 
     CollectionTree tree;
     buildTreeFromCollection(collection, tree);
@@ -689,33 +695,45 @@ int main(int argc, char* argv[])
             }
             if (ImGui::BeginTabItem("Authorization"))
             {
+                Auth* currentAuth = nullptr;
+
                 if (currentRequest != nullptr) {
+                    currentAuth = &currentRequest->auth;
+                }
+                else {
+                    auto node = tree.getNodeById(selectedNodeId);
+                    if (node != nullptr && node->authIndex != CollectionTree::InvalidIndex) {
+                        currentAuth = &tree.auths[node->authIndex];
+                    }
+                }
+
+                if (currentAuth != nullptr) {
                     const char* previewText = nullptr;
-                    if ((int)currentRequest->auth.type >= 0 && (int)currentRequest->auth.type <= (int)AuthType::_LAST) {
-                        previewText = authTypeUIStrings[(int)currentRequest->auth.type];
+                    if ((int)currentAuth->type >= 0 && (int)currentAuth->type <= (int)AuthType::_LAST) {
+                        previewText = authTypeUIStrings[(int)currentAuth->type];
                     }
 
                     if (ImGui::BeginCombo("Type", previewText)) {
                         
                         for (int i = 0; i < (int)AuthType::_COUNT; i++) {
-                            const bool selected = currentRequest->auth.type == (AuthType)i;
+                            const bool selected = currentAuth->type == (AuthType)i;
                             ImGui::Selectable(authTypeUIStrings[i], selected);
                         }
 
                         ImGui::EndCombo();
                     }
 
-                    for (int i=0; i< (int)currentRequest->auth.attributes.size(); i++) {
+                    for (int i=0; i< (int)currentAuth->attributes.size(); i++) {
                         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
                         char arg_name[32];
                         sprintf(arg_name, "Name##auth arg name%d", i);
-                        if (ImGui::InputText(arg_name, &currentRequest->auth.attributes[i].key[0], currentRequest->auth.attributes[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                        if (ImGui::InputText(arg_name, &currentAuth->attributes[i].key[0], currentAuth->attributes[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             // TODO
                         }
                         ImGui::SameLine();
                         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
                         sprintf(arg_name, "Value##auth arg value%d", i);
-                        if (ImGui::InputText(arg_name, &currentRequest->auth.attributes[i].value[0], currentRequest->auth.attributes[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                        if (ImGui::InputText(arg_name, &currentAuth->attributes[i].value[0], currentAuth->attributes[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             // TODO
                         }
                     }
