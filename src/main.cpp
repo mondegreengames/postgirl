@@ -70,8 +70,8 @@ void processRequest(std::thread& thread,
                 new_history.request.url, 
                 new_history.request.query_args, 
                 new_history.request.headers.headers,
-                new_history.request.auth,
-                currentRequest.body_type, 
+                new_history.request.auth.has_value() ? new_history.request.auth.value() : Auth{},
+                new_history.request.body_type, 
                 std::ref(new_history.response.result), 
                 std::ref(new_history.response.result_headers.headers), 
                 std::ref(new_history.response.response_code));
@@ -86,8 +86,8 @@ void processRequest(std::thread& thread,
                 new_history.request.query_args, 
                 new_history.request.form_args, 
                 new_history.request.headers.headers,
-                new_history.request.auth,
-                currentRequest.body_type, 
+                new_history.request.auth.has_value() ? new_history.request.auth.value() : Auth{},
+                new_history.request.body_type, 
                 new_history.request.input_json, 
                 std::ref(new_history.response.result), 
                 std::ref(new_history.response.result_headers.headers), 
@@ -703,7 +703,9 @@ int main(int argc, char* argv[])
                 Auth* currentAuth = nullptr;
 
                 if (currentRequest != nullptr) {
-                    currentAuth = &currentRequest->auth;
+                    if (currentRequest->auth.has_value()) {
+                        currentAuth = &currentRequest->auth.value();
+                    }
                 }
                 else {
                     auto node = selectedTree != nullptr ? selectedTree->getNodeById(selectedNodeId) : nullptr;
@@ -719,6 +721,8 @@ int main(int argc, char* argv[])
                     }
 
                     if (ImGui::BeginCombo("Type", previewText)) {
+
+                        ImGui::Selectable("Inherit auth from parent");
                         
                         for (int i = 0; i < (int)AuthType::_COUNT; i++) {
                             const bool selected = currentAuth->type == (AuthType)i;
@@ -776,6 +780,19 @@ int main(int argc, char* argv[])
                                 }
                             }
                         }
+                    }
+                }
+                else {
+                    const char* inheritText = "Inherit auth from parent";
+                    if (ImGui::BeginCombo("Type", inheritText)) {
+
+                        ImGui::Selectable(inheritText, true);
+
+                        for (int i = 0; i < (int)AuthType::_COUNT; i++) {
+                            ImGui::Selectable(authTypeUIStrings[i]);
+                        }
+
+                        ImGui::EndCombo();
                     }
                 }
 

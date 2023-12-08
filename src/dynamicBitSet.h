@@ -64,7 +64,7 @@ public:
             if (sizeof(size_t) == 4) {
 #ifdef _WIN32
                 unsigned long index;
-                if (_BitScanForward(&index, bit) == 0) {
+                if (_BitScanForward(&index, (unsigned long)bit) == 0) {
                     index = 0;
                 }
                 int result = i * wordSizeInBits + index;

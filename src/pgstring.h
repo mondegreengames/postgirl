@@ -25,7 +25,7 @@ public:
     }
 
     inline String(const char* str) {
-        int size = strlen(str)+1;
+        int size = (int)strlen(str)+1;
         int cap = DEFAULT_STRING_SIZE;
         if (size > cap) cap = size;
         capacity_ = cap;
@@ -52,7 +52,7 @@ public:
 
     inline String& operator=(const String& src) 
     {
-        int size = strlen(src.buf_)+1;
+        int size = (int)strlen(src.buf_)+1;
         if (size >= capacity_) {
             capacity_ = src.capacity_;
             if (buf_) free(buf_);
@@ -76,7 +76,7 @@ public:
 
     inline void set(const char* str)
     {
-        int size = strlen(str)+1;
+        int size = (int)strlen(str)+1;
         if (size >= capacity_)
             realloc(size+1);
             
@@ -85,8 +85,8 @@ public:
 
     inline void append(const char* str, int size=-1)
     {
-        if (size<0) size = strlen(str)+1;
-        int curr_len = strlen(buf_);
+        if (size<0) size = (int)strlen(str)+1;
+        int curr_len = (int)strlen(buf_);
 
         if (curr_len + size > capacity_) realloc(curr_len+size+1);
         memcpy(buf_+curr_len, str, size);
@@ -117,7 +117,7 @@ public:
     inline int              capacity() const            { return capacity_; }
     inline char&            operator[](int i)           { assert(i < capacity_); return buf_[i]; }
     inline const char&      operator[](int i) const     { assert(i < capacity_); return buf_[i]; }
-    inline int              length() const              { return strlen(buf_); }
+    inline int              length() const              { return (int)strlen(buf_); }
 
     int capacity_;
     char* buf_;

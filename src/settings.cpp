@@ -125,7 +125,7 @@ bool Settings::Load(const char* filename, Settings& settings)
         const auto& collections = document["collections"];
 
         if (collections.IsArray()) {
-            for (int i = 0; i < collections.Size(); i++) {
+            for (unsigned int i = 0; i < collections.Size(); i++) {
                 const auto& collection = collections[i];
                 if (collection.IsString()) {
                     settings.CollectionList.push_back(collection.GetString());

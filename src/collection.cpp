@@ -5,6 +5,20 @@
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
 
+const char* variableTypeStrings[] = {
+    "string",
+    "boolean",
+    "any",
+    "number",
+};
+
+const char* variableTypeUIStrings[] = {
+    "String",
+    "Boolean",
+    "Any",
+    "Number",
+};
+
 bool parseAuth(const rapidjson::Value& auth, Auth& result)
 {
     if (auth.HasMember("type") && auth["type"].IsString())
@@ -148,11 +162,48 @@ bool parseRequest(const rapidjson::Value& request, Request& result)
     if (request.HasMember("auth") && request["auth"].IsObject())
     {
         const auto& auth = request["auth"];
-
-        parseAuth(auth, result.auth);
+        Auth authObj;
+        if (parseAuth(auth, authObj)) {
+            result.auth = authObj;
+        }
     }
 
     // TODO: the rest
+
+    return true;
+}
+
+bool parseVariable(const rapidjson::Value& item, Variable& result) {
+    if (item.HasMember("key") && item["key"].IsString()) {
+        result.key = item["key"].GetString();
+    }
+
+    if (item.HasMember("value") && item["value"].IsString()) {
+        result.value = item["value"].GetString();
+    }
+
+    if (item.HasMember("type") && item["type"].IsString()) {
+        const char* type = item["type"].GetString();
+
+        for (int i = 0; i < 4; i++) {
+            if (strcmp(variableTypeStrings[i], type) == 0) {
+                result.type = (VariableType)i;
+                break;
+            }
+        }
+    }
+
+    if (item.HasMember("name") && item["name"].IsString()) {
+        result.name = item["name"].GetString();
+    }
+
+    if (item.HasMember("system") && item["system"].IsBool()) {
+        result.system = item["system"].GetBool();
+    }
+
+    if (item.HasMember("disabled") && item["disabled"].IsBool()) {
+        result.disabled = item["disabled"].GetBool();
+    }
 
     return true;
 }
@@ -199,10 +250,23 @@ bool parseItem(const rapidjson::Value& item, Item& result)
         if (item.HasMember("auth") && item["auth"].IsObject())
         {
             const auto& auth = item["auth"];
-            parseAuth(auth, result.auth);
+
+            Auth authObj;
+            parseAuth(auth, authObj);
+            result.auth = authObj;
         }
 
         return true;
+    }
+
+    if (item.HasMember("variable") && item["variable"].IsArray()) {
+        const auto& variable = item["variable"];
+        for (unsigned int i = 0; i < variable.Size(); i++) {
+            Variable v;
+            if (parseVariable(variable[i], v)) {
+                result.variables.push_back(v);
+            }
+        }
     }
 
     return false;
@@ -248,6 +312,16 @@ bool Collection::Load(const char* filename, Collection& result)
         const auto& info = document["info"];
         if (info.HasMember("name") && info["name"].IsString())
             result.name = info["name"].GetString();
+    }
+
+    if (document.HasMember("variable") && document["variable"].IsArray()) {
+        const auto& variable = document["variable"];
+        for (unsigned int i = 0; i < variable.Size(); i++) {
+            Variable v;
+            if (parseVariable(variable[i], v)) {
+                result.variables.push_back(v);
+            }
+        }
     }
 
     fclose(fp);

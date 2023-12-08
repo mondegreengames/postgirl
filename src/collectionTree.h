@@ -301,8 +301,8 @@ bool addToTree(int parentIndex, const Item* item, CollectionTree& tree)
     }
 
     const Auth* auth = nullptr;
-    if (item->auth.type != AuthType::NONE || item->auth.attributes.Size > 0) {
-        auth = &item->auth;
+    if (item->auth.has_value()) {
+        auth = &item->auth.value();
     }
 
     const Request* req = nullptr;
@@ -334,10 +334,7 @@ bool buildTreeFromCollection(const Collection& collection, int treeId, Collectio
         name = collection.name.buf_;
     }
 
-    const Auth* auth = nullptr;
-    if (collection.auth.type != AuthType::NONE || collection.auth.attributes.Size > 0) {
-        auth = &collection.auth;
-    }
+    const Auth* auth = &collection.auth;
 
     result.init(name, treeId, auth);
 

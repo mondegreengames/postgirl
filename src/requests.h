@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <curl/curl.h>
 #include "pgstring.h"
 #include "pgvector.h"
@@ -184,7 +185,7 @@ struct Auth
 typedef struct Request
 {
     pg::String url;
-    Auth auth;
+    std::optional<Auth> auth;
     pg::Vector<Argument> query_args;
     pg::Vector<Argument> form_args;
     HeaderKeyValueCollection headers;
