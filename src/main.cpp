@@ -105,7 +105,7 @@ static inline float GetWindowContentRegionWidth()
     return ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x; 
 }
 
-int renderCollections(CollectionDB& collectionDB, CollectionTree& tree, CollectionTree* selectedTree, int currentSelectedId)
+int renderCollections(CollectionDB& collectionDB, CollectionTree& tree, unsigned int currentSelectedId)
 {
     ImGuiContext* ctx = ImGui::GetCurrentContext();
 
@@ -144,7 +144,7 @@ int renderCollections(CollectionDB& collectionDB, CollectionTree& tree, Collecti
 
             Request* req = collectionDB.getRequest(itr->requestIndex);
             assert(req != nullptr);
-            const bool selected = selectedTree == &tree && currentSelectedId == itr->id;
+            const bool selected = currentSelectedId == itr->id;
             const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_AllowItemOverlap | (selected ? ImGuiTreeNodeFlags_Selected : 0);
             nodeOpen = ImGui::TreeNodeEx(itr, flags, "%s %s%s", RequestTypeToString(req->req_type), name, dirtyIndicator);
 
@@ -304,8 +304,8 @@ int main(int argc, char* argv[])
     workingRequest.input_json.resize(1024*3200);
     workingRequest.url.set("http://localhost:5000/test_route");
     Request* currentRequest = nullptr;
-    int selectedNodeId = CollectionTree::InvalidId;
-    CollectionTree* selectedTree = nullptr;
+    unsigned int selectedNodeId = CollectionTree::InvalidId;
+    //CollectionTree* selectedTree = nullptr;
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -464,7 +464,7 @@ int main(int argc, char* argv[])
         }
         if (ImGui::BeginTabItem("Collections"))
         {
-            const CollectionNode* node = selectedTree != nullptr ? selectedTree->getNodeById(selectedNodeId) : nullptr;
+            const CollectionNode* node = treeDB.getNodeById(selectedNodeId);
             const bool isNodeSelected = node != nullptr;
             const bool isRequest = isNodeSelected && node->requestIndex != CollectionTree::InvalidIndex;
 
@@ -502,10 +502,10 @@ int main(int argc, char* argv[])
             ImGui::EndDisabled();
 
             for (int i = 0; i < treeDB.trees.Size; i++) {
-                int selectedId = renderCollections(treeDB, treeDB.trees.Data[i], selectedTree, selectedNodeId);
+                int selectedId = renderCollections(treeDB, treeDB.trees.Data[i], selectedNodeId);
 
                 if (selectedId != CollectionTree::InvalidId) {
-                    selectedTree = &treeDB.trees.Data[i];
+                    //selectedTree = &treeDB.trees.Data[i];
                     selectedNodeId = selectedId;
                 }
             }
@@ -522,8 +522,8 @@ int main(int argc, char* argv[])
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
             ImGui::BeginChild("MainMenu", ImVec2(0, 0), false, window_flags);
 
-            if (selectedNodeId != CollectionTree::InvalidId && selectedTree != nullptr) {
-                auto currentNode = selectedTree->getNodeById(selectedNodeId);
+            if (selectedNodeId != CollectionTree::InvalidId) {
+                auto currentNode = treeDB.getNodeById(selectedNodeId);
                 if (currentNode->requestIndex != CollectionTree::InvalidIndex) {
                     currentRequest = treeDB.getRequest(currentNode->requestIndex);
                 }
@@ -541,7 +541,7 @@ int main(int argc, char* argv[])
                             currentRequest->req_type = (RequestType)n;
                             currentRequest->body_type = BodyType::MULTIPART_FORMDATA;
 
-                            if (selectedTree != nullptr) { selectedTree->setDirty(selectedNodeId, true); }
+                            treeDB.setDirty(selectedNodeId, true);
                         }
                     }
                     ImGui::EndCombo();
@@ -551,14 +551,14 @@ int main(int argc, char* argv[])
                 ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
                 if (ImGui::InputText("##URL", currentRequest->url.buf_, currentRequest->url.capacity_, ImGuiInputTextFlags_EnterReturnsTrue) ) {
                     ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget
-                    if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                    treeDB.setDirty(selectedNodeId, true);
                     processRequest(thread, histories, *currentRequest, thread_status);
                 }
                 if (ImGui::IsItemEdited())
                 {
                     currentRequest->query_args.clear();
                     deconstructUrl(currentRequest->url.buf_, currentRequest->query_args);
-                    if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                    treeDB.setDirty(selectedNodeId, true);
                 }
 
                 if (thread_status == FINISHED) {
@@ -582,7 +582,7 @@ int main(int argc, char* argv[])
                         char arg_name[32];
                         sprintf(arg_name, "Name##arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->query_args[i].name[0], currentRequest->query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                            treeDB.setDirty(selectedNodeId, true);
                             processRequest(thread, histories, *currentRequest, thread_status);
                         }
                         if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
@@ -590,7 +590,7 @@ int main(int argc, char* argv[])
                         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
                         sprintf(arg_name, "Value##arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->query_args[i].value[0], currentRequest->query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                            treeDB.setDirty(selectedNodeId, true);
                             processRequest(thread, histories, *currentRequest, thread_status);
                         }
                         if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
@@ -604,7 +604,7 @@ int main(int argc, char* argv[])
                             }
                             delete_arg_btn.push_back(i);
                             argsDirty = true;
-                            if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                            treeDB.setDirty(selectedNodeId, true);
                         }
                     }
 
@@ -617,13 +617,13 @@ int main(int argc, char* argv[])
                         Argument arg;
                         arg.arg_type = 0;
                         currentRequest->query_args.push_back(arg);
-                        if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                        treeDB.setDirty(selectedNodeId, true);
                     }
                     ImGui::SameLine();
                     if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
                         currentRequest->query_args.clear();
                         argsDirty = true;
-                        if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                        treeDB.setDirty(selectedNodeId, true);
                     }
 
                     // delete the args
@@ -637,7 +637,7 @@ int main(int argc, char* argv[])
                     if (argsDirty)
                     {
                         currentRequest->url = buildUrl(currentRequest->url.buf_, currentRequest->query_args);
-                        if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                        treeDB.setDirty(selectedNodeId, true);
                     }
                 }
                 else {
@@ -655,7 +655,7 @@ int main(int argc, char* argv[])
                     }
                 }
                 else {
-                    auto node = selectedTree != nullptr ? selectedTree->getNodeById(selectedNodeId) : nullptr;
+                    auto node = treeDB.getNodeById(selectedNodeId);
                     if (node != nullptr && node->authIndex != CollectionTree::InvalidIndex) {
                         currentAuth = treeDB.getAuth(node->authIndex);
                     }
@@ -755,21 +755,21 @@ int main(int argc, char* argv[])
                         char arg_name[32];
                         sprintf(arg_name, "Name##header arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->headers.headers[i].key[0], currentRequest->headers.headers[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                            treeDB.setDirty(selectedNodeId, true);
                             processRequest(thread, histories, *currentRequest, thread_status);
                         }
                         ImGui::SameLine();
                         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
                         sprintf(arg_name, "Value##header arg value%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->headers.headers[i].value[0], currentRequest->headers.headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                            treeDB.setDirty(selectedNodeId, true);
                             processRequest(thread, histories, *currentRequest, thread_status);
                         }
                         ImGui::SameLine();
                         char btn_name[32];
                         sprintf(btn_name, "Delete##header arg delete%d", i);
                         if (ImGui::Button(btn_name)) {
-                            if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                            treeDB.setDirty(selectedNodeId, true);
                             delete_arg_btn.push_back(i);
                         }
                     }
@@ -787,12 +787,12 @@ int main(int argc, char* argv[])
 
                     if (ImGui::Button("Add Header Arg")) {
                         currentRequest->headers.headers.push_back(HeaderKeyValue{ .enabled = true });
-                        if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                        treeDB.setDirty(selectedNodeId, true);
                     }
                     ImGui::SameLine();
                     if (ImGui::Button("Delete all headers") && thread_status != RUNNING) {
                         currentRequest->headers.headers.clear();
-                        if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                        treeDB.setDirty(selectedNodeId, true);
                     }
 
                     ImGui::EndTabItem();
@@ -811,7 +811,7 @@ int main(int argc, char* argv[])
                                 for (int n = 0; n < (int)BodyType::_COUNT; n++) {
                                     if (ImGui::Selectable(bodyTypeUIStrings[n])) {
                                         currentRequest->body_type = (BodyType)n;
-                                        if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                                        treeDB.setDirty(selectedNodeId, true);
                                     }
                                 }
                                 ImGui::EndCombo();
@@ -833,7 +833,7 @@ int main(int argc, char* argv[])
                             {
                                 if (ImGui::Selectable(rawBodyTypeUIStrings[i])) {
                                     currentRequest->headers.setHeaderValue("Content-Type", rawBodyTypeStrings[i]);
-                                    if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                                    treeDB.setDirty(selectedNodeId, true);
                                 }
                             }
                             ImGui::EndCombo();
@@ -864,7 +864,7 @@ int main(int argc, char* argv[])
                             int block_height = ImGui::GetContentRegionAvail()[1];
                             block_height /= 2;
                             if (ImGui::InputTextMultiline("##input_json", &currentRequest->input_json[0], currentRequest->input_json.capacity(), ImVec2(-1.0f, block_height), ImGuiInputTextFlags_AllowTabInput)) {
-                                if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                                treeDB.setDirty(selectedNodeId, true);
                             }
                         }
                         else {
@@ -880,14 +880,14 @@ int main(int argc, char* argv[])
                                 char arg_name[32];
                                 sprintf(arg_name, "Name##arg name%d", i);
                                 if (ImGui::InputText(arg_name, &currentRequest->form_args[i].name[0], currentRequest->form_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                                    if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                                    treeDB.setDirty(selectedNodeId, true);
                                     processRequest(thread, histories, *currentRequest, thread_status);
                                 }
                                 ImGui::SameLine();
                                 ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
                                 sprintf(arg_name, "Value##arg name%d", i);
                                 if (ImGui::InputText(arg_name, &currentRequest->form_args[i].value[0], currentRequest->form_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                                    if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                                    treeDB.setDirty(selectedNodeId, true);
                                     processRequest(thread, histories, *currentRequest, thread_status);
                                 }
                                 ImGui::SameLine();
@@ -902,7 +902,7 @@ int main(int argc, char* argv[])
                                 char btn_name[32];
                                 sprintf(btn_name, "Delete##arg delete%d", i);
                                 if (ImGui::Button(btn_name)) {
-                                    if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                                    treeDB.setDirty(selectedNodeId, true);
                                     if (curr_arg_file == i) {
                                         curr_arg_file = -1;
                                         picking_file = false;
@@ -920,12 +920,12 @@ int main(int argc, char* argv[])
                                 Argument arg;
                                 arg.arg_type = 0;
                                 currentRequest->form_args.push_back(arg);
-                                if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                                treeDB.setDirty(selectedNodeId, true);
                             }
                             ImGui::SameLine();
                             if (ImGui::Button("Delete all args") && thread_status != RUNNING) {
                                 currentRequest->form_args.clear();
-                                if (selectedTree != nullptr) selectedTree->setDirty(selectedNodeId, true);
+                                treeDB.setDirty(selectedNodeId, true);
                             }
 
                             // delete the args

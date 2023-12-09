@@ -66,6 +66,44 @@ public:
         return (size_t)requestIndex;
     }
 
+    CollectionTree* getTreeByNodeId(unsigned int nodeId) {
+        const unsigned int treeId = (nodeId >> CollectionTree::TreeIdShift);
+
+        for (size_t i = 0; i < trees.Size; i++) {
+            if (trees.Data[i].treeId == treeId) {
+                return &trees.Data[i];
+            }
+        }
+
+        return nullptr;
+    }
+
+    CollectionNode* getNodeById(unsigned int id) {
+        CollectionTree* tree = getTreeByNodeId(id);
+
+        if (tree != nullptr) {
+            return tree->getNodeById(id);
+        }
+
+        return nullptr;
+    }
+
+    void setDirty(unsigned int nodeId, bool dirty) {
+        CollectionNode* node = getNodeById(nodeId);
+        if (node != nullptr) {
+            node->isDirty = dirty;
+        }
+    }
+
+    bool isDirty(int id) {
+        CollectionNode* node = getNodeById(id);
+        if (node != nullptr) {
+            return node->isDirty;
+        }
+
+        return false;
+    }
+
     pg::String* getName(int index) {
         if (namesAlive.isSet(index)) {
             return &names.Data[index];
