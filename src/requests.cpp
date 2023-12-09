@@ -276,25 +276,24 @@ void addAuthentication(CURL* curl, const Auth& authentication)
     // TODO: The rest
 }
 
-void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType, pg::String url,
-        pg::Vector<Argument> args, pg::Vector<HeaderKeyValue> headers, Auth authentication,
-        BodyType contentTypeEnum, pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
+void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, Request request,
+    pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
 { 
     CURLcode res;
     CURL* curl;
     curl = curl_easy_init();
 
-    const char* contentType = HeaderKeyValueCollection::findHeaderValue(headers, "Content-Type");
+    const char* contentType = HeaderKeyValueCollection::findHeaderValue(request.headers.headers, "Content-Type");
 
     MemoryStruct chunk;
     MemoryStruct headerChunk;
-    if (reqType == RequestType::GET) {
+    if (request.req_type == RequestType::GET) {
         curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
     } else {
         curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
     }
     
-    url = buildUrl(url.buf_, args);
+    request.url = buildUrl(request.url.buf_, request.query_args);
 
     struct curl_slist *header_chunk = NULL;
     if (contentType != nullptr && contentType[0] != 0) {
@@ -302,10 +301,10 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
         aux.append(contentType);
         header_chunk = curl_slist_append(header_chunk, aux.buf_);
     }  
-    for (int i=0; i<(int)headers.size(); i++) {
-        pg::String header(headers[i].key);
-        if (headers[i].key.length() > 0) header.append(": ");
-        header.append(headers[i].value);
+    for (int i=0; i<(int)request.headers.headers.size(); i++) {
+        pg::String header(request.headers.headers[i].key);
+        if (request.headers.headers[i].key.length() > 0) header.append(": ");
+        header.append(request.headers.headers[i].value);
         header_chunk = curl_slist_append(header_chunk, header.buf_);
     }
     if (header_chunk) {
@@ -318,9 +317,11 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
         }
     }
 
-    addAuthentication(curl, authentication);
-    
-    curl_easy_setopt(curl, CURLOPT_URL, url.buf_);
+    if (request.auth.has_value()) {
+        addAuthentication(curl, request.auth.value());
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, request.url.buf_);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "libcurl-agent/1.0");
@@ -349,21 +350,18 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestTyp
 
 
 
-void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
-                      pg::String url, pg::Vector<Argument> query_args, pg::Vector<Argument> form_args, 
-                      pg::Vector<HeaderKeyValue> headers, Auth authentication,
-                      BodyType contentTypeEnum, const pg::String& inputJson, 
-                      pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
+void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request request,
+    pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
 { 
     CURL *curl;
     CURLcode res;
     MemoryStruct chunk;
     MemoryStruct headerChunk;
 
-    const char* contentType = HeaderKeyValueCollection::findHeaderValue(headers, "Content-Type");
+    const char* contentType = HeaderKeyValueCollection::findHeaderValue(request.headers.headers, "Content-Type");
     if (contentType == nullptr || contentType[0] == 0)
     {
-        switch(contentTypeEnum)
+        switch(request.body_type)
         {
             case BodyType::MULTIPART_FORMDATA: contentType = "multipart/form-data"; break;
             case BodyType::URL_ENCODED: contentType = "application/x-www-form-urlencoded"; break;
@@ -372,16 +370,16 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
         }
     }
 
-    if (form_args.size() == 0 && inputJson.length() == 0) {
+    if (request.form_args.size() == 0 && request.input_json.length() == 0) {
         thread_result = "No argument passed for POST";
         thread_status = FINISHED;
         return;
     }
 
     struct WriteThis wt = {};
-    if (contentTypeEnum == BodyType::RAW) {
-        wt.readptr = inputJson.buf_;
-        wt.sizeleft = inputJson.length();
+    if (request.body_type == BodyType::RAW) {
+        wt.readptr = request.input_json.buf_;
+        wt.sizeleft = request.input_json.length();
     } 
 
     /* In windows, this will init the winsock stuff */ 
@@ -402,8 +400,8 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
 
         pg::String formBuffer;
 
-        if (contentTypeEnum == BodyType::MULTIPART_FORMDATA) {
-            for (int i = 0; i < form_args.size(); i++) {
+        if (request.body_type == BodyType::MULTIPART_FORMDATA) {
+            for (int i = 0; i < request.form_args.size(); i++) {
                 if (form == NULL) {
                     /* Create the form */
                     form = curl_mime_init(curl);
@@ -411,31 +409,31 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
 
                 /* Fill in the file upload field */
                 field = curl_mime_addpart(form);
-                curl_mime_name(field, form_args[i].name.buf_);
-                if (form_args[i].arg_type == 1)
-                    curl_mime_filedata(field, form_args[i].value.buf_);
+                curl_mime_name(field, request.form_args[i].name.buf_);
+                if (request.form_args[i].arg_type == 1)
+                    curl_mime_filedata(field, request.form_args[i].value.buf_);
                 else
-                    curl_mime_data(field, form_args[i].value.buf_, CURL_ZERO_TERMINATED);
+                    curl_mime_data(field, request.form_args[i].value.buf_, CURL_ZERO_TERMINATED);
             }
         }
-        else if (contentTypeEnum == BodyType::RAW || contentTypeEnum == BodyType::URL_ENCODED) {
+        else if (request.body_type == BodyType::RAW || request.body_type == BodyType::URL_ENCODED) {
 
-            if (contentTypeEnum == BodyType::URL_ENCODED) {
-                for (int i = 0; i < form_args.Size; i++) {
+            if (request.body_type == BodyType::URL_ENCODED) {
+                for (int i = 0; i < request.form_args.Size; i++) {
                     if (i > 0) {
                         formBuffer.append("&");
                     }
-                    formBuffer.append(form_args[i].name.buf_);
+                    formBuffer.append(request.form_args[i].name.buf_);
                     formBuffer.append("=");
-                    formBuffer.append(form_args[i].value.buf_); // TODO: url encode
+                    formBuffer.append(request.form_args[i].value.buf_); // TODO: url encode
                 }
 
                 wt.readptr = formBuffer.buf_;
                 wt.sizeleft = formBuffer.length();
             }
             else {
-                wt.readptr = inputJson.buf_;
-                wt.sizeleft = inputJson.length();
+                wt.readptr = request.input_json.buf_;
+                wt.sizeleft = request.input_json.length();
             }
 
             curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
@@ -443,7 +441,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
             curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)wt.sizeleft);
         }
 
-        url = buildUrl(url.buf_, query_args);
+        request.url = buildUrl(request.url.buf_, request.query_args);
 
         struct curl_slist *header_chunk = NULL;
         if (contentType != nullptr && contentType[0] != 0) {
@@ -451,10 +449,10 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
             aux.append(contentType);
             header_chunk = curl_slist_append(header_chunk, aux.buf_);
         }
-        for (int i=0; i<(int)headers.size(); i++) {
-            pg::String header(headers[i].key);
-            if (headers[i].key.length() > 0) header.append(": ");
-            header.append(headers[i].value);
+        for (int i=0; i<(int)request.headers.headers.size(); i++) {
+            pg::String header(request.headers.headers[i].key);
+            if (request.headers.headers[i].key.length() > 0) header.append(": ");
+            header.append(request.headers.headers[i].value);
             header_chunk = curl_slist_append(header_chunk, header.buf_);
         }
         if (header_chunk) {
@@ -466,13 +464,15 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
                 return;
             }
         }
-        curl_easy_setopt(curl, CURLOPT_URL, url.buf_);
+        curl_easy_setopt(curl, CURLOPT_URL, request.url.buf_);
 
-        addAuthentication(curl, authentication);
+        if (request.auth.has_value()) {
+            addAuthentication(curl, request.auth.value());
+        }
 
-        if (reqType == RequestType::POST) {
+        if (request.req_type == RequestType::POST) {
             curl_easy_setopt(curl, CURLOPT_POST, 1L);
-        } else if (reqType == RequestType::PATCH) {
+        } else if (request.req_type == RequestType::PATCH) {
             curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
         } else {
             curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");

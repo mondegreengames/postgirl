@@ -62,6 +62,20 @@ public:
         return *this;
     }
 
+    inline String& operator=(String&& src) noexcept
+    {
+        if (this != &src) {
+            if (buf_) free(buf_);
+            buf_ = src.buf_;
+            capacity_ = src.capacity_;
+
+            src.buf_ = nullptr;
+            src.capacity_ = 0;
+        }
+
+        return *this;
+    }
+
     inline bool operator==(const String& b) const
     {
         bool result = strcmp(this->buf_, b.buf_) == 0;

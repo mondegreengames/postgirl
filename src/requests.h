@@ -231,15 +231,11 @@ typedef struct Response
 pg::String buildUrl(const char* baseUrl, const pg::Vector<Argument>& args);
 bool deconstructUrl(const char* url, pg::Vector<Argument>& args);
 
-void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, RequestType reqType,  
-                      pg::String url, pg::Vector<Argument> args, pg::Vector<HeaderKeyValue> headers, Auth authentication,
-                      BodyType contentType, pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code);
+void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, Request request,
+    pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code);
 
-void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, RequestType reqType,
-                      pg::String url, pg::Vector<Argument> query_args, pg::Vector<Argument> form_args,
-                      pg::Vector<HeaderKeyValue> headers, Auth authentication,
-                      BodyType contentType, const pg::String& inputJson, 
-                      pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code);
+void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request request,
+    pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code);
 
 const char* RequestTypeToString(RequestType req);
 

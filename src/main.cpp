@@ -20,6 +20,7 @@
 #include "platform.h"
 #include "dynamicBitSet.h"
 #include "collectionTree.h"
+#include "collectionDb.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -66,12 +67,7 @@ void processRequest(std::thread& thread,
         case RequestType::OPTIONS:
             thread = std::thread(threadRequestGetDelete, 
                 std::ref(thread_status), 
-                currentRequest.req_type, 
-                new_history.request.url, 
-                new_history.request.query_args, 
-                new_history.request.headers.headers,
-                new_history.request.auth.has_value() ? new_history.request.auth.value() : Auth{},
-                new_history.request.body_type, 
+                new_history.request, 
                 std::ref(new_history.response.result), 
                 std::ref(new_history.response.result_headers.headers), 
                 std::ref(new_history.response.response_code));
@@ -81,14 +77,7 @@ void processRequest(std::thread& thread,
         case RequestType::PUT:
             thread = std::thread(threadRequestPostPatchPut, 
                 std::ref(thread_status), 
-                currentRequest.req_type, 
-                new_history.request.url, 
-                new_history.request.query_args, 
-                new_history.request.form_args, 
-                new_history.request.headers.headers,
-                new_history.request.auth.has_value() ? new_history.request.auth.value() : Auth{},
-                new_history.request.body_type, 
-                new_history.request.input_json, 
+                new_history.request,
                 std::ref(new_history.response.result), 
                 std::ref(new_history.response.result_headers.headers), 
                 std::ref(new_history.response.response_code));
@@ -116,7 +105,7 @@ static inline float GetWindowContentRegionWidth()
     return ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x; 
 }
 
-int renderCollections(CollectionTree& tree, CollectionTree* selectedTree, int currentSelectedId)
+int renderCollections(CollectionDB& collectionDB, CollectionTree& tree, CollectionTree* selectedTree, int currentSelectedId)
 {
     ImGuiContext* ctx = ImGui::GetCurrentContext();
 
@@ -142,7 +131,8 @@ int renderCollections(CollectionTree& tree, CollectionTree* selectedTree, int cu
             name = "Unnamed";
         }
         else {
-            name = tree.names[itr->nameIndex].buf_;
+            name = collectionDB.getNameStr(itr->nameIndex);
+            assert(name != nullptr);
         }
 
         const char* dirtyIndicator = itr->isDirty ? "*" : "";
@@ -152,7 +142,8 @@ int renderCollections(CollectionTree& tree, CollectionTree* selectedTree, int cu
             const int totalWidth = ImGui::GetWindowWidth();
             const int frameHeight = ImGui::GetFrameHeight();
 
-            Request* req = &tree.requests[itr->requestIndex];
+            Request* req = collectionDB.getRequest(itr->requestIndex);
+            assert(req != nullptr);
             const bool selected = selectedTree == &tree && currentSelectedId == itr->id;
             const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_AllowItemOverlap | (selected ? ImGuiTreeNodeFlags_Selected : 0);
             nodeOpen = ImGui::TreeNodeEx(itr, flags, "%s %s%s", RequestTypeToString(req->req_type), name, dirtyIndicator);
@@ -189,48 +180,6 @@ int renderCollections(CollectionTree& tree, CollectionTree* selectedTree, int cu
 }
 
 #define MAKE_TREE_NODE_DIRTY(index) if (index != CollectionTree::InvalidIndex) { tree.setDirty(index, true); }
-
-#if 0
-const Request* renderCollections(const Item& item, const Request* originalSelectedRequest)
-{
-    const Request* selectedRequest = nullptr;
-
-    const char* name = "Unnamed";
-    if (item.name.buf_[0] != 0)
-        name = item.name.buf_;
-
-    if (item.data.index() == 0)
-    {
-        auto& items = std::get<pg::Vector<Item>>(item.data);
-        if (ImGui::TreeNode(name))
-        {
-            for (auto itr = items.begin(); itr != items.end(); ++itr)
-            {
-                const Request* renderResult = renderCollections((*itr), originalSelectedRequest);
-                if (renderResult != nullptr)
-                    selectedRequest = renderResult;
-            }
-
-            ImGui::TreePop();
-        }
-    }
-    else
-    {
-        auto& request = std::get<Request>(item.data);
-        
-        bool selected = &request == originalSelectedRequest;
-        if (ImGui::TreeNodeEx(&item, ImGuiTreeNodeFlags_Leaf | (selected ? ImGuiTreeNodeFlags_Selected : 0), "%s %s", RequestTypeToString(request.req_type), name))
-        {
-            if (ImGui::IsItemClicked())
-                selectedRequest = &request;
-
-            ImGui::TreePop();
-        }
-    }
-
-    return selectedRequest;
-}
-#endif
 
 int main(int argc, char* argv[])
 {
@@ -334,14 +283,12 @@ int main(int argc, char* argv[])
     }
     bool update_hist_search = true; // used to init stuff on first run
 
-    pg::Vector<CollectionTree> trees;
+    CollectionDB treeDB;
     for (int i = 0; i < settings.CollectionList.Size; i++) {
         Collection collection;
         if (Collection::Load(settings.CollectionList[i].buf_, collection)) {
             CollectionTree tree;
-            if (buildTreeFromCollection(collection, i + 1, tree)) {
-                trees.push_back(tree);
-            }
+            treeDB.buildTreeFromCollection(collection, i + 1, tree);
         }
     }
 
@@ -554,11 +501,11 @@ int main(int argc, char* argv[])
 
             ImGui::EndDisabled();
 
-            for (int i = 0; i < trees.Size; i++) {
-                int selectedId = renderCollections(trees[i], selectedTree, selectedNodeId);
+            for (int i = 0; i < treeDB.trees.Size; i++) {
+                int selectedId = renderCollections(treeDB, treeDB.trees.Data[i], selectedTree, selectedNodeId);
 
                 if (selectedId != CollectionTree::InvalidId) {
-                    selectedTree = &trees[i];
+                    selectedTree = &treeDB.trees.Data[i];
                     selectedNodeId = selectedId;
                 }
             }
@@ -578,7 +525,7 @@ int main(int argc, char* argv[])
             if (selectedNodeId != CollectionTree::InvalidId && selectedTree != nullptr) {
                 auto currentNode = selectedTree->getNodeById(selectedNodeId);
                 if (currentNode->requestIndex != CollectionTree::InvalidIndex) {
-                    currentRequest = &selectedTree->requests[currentNode->requestIndex];
+                    currentRequest = treeDB.getRequest(currentNode->requestIndex);
                 }
                 else {
                     currentRequest = nullptr;
@@ -710,7 +657,7 @@ int main(int argc, char* argv[])
                 else {
                     auto node = selectedTree != nullptr ? selectedTree->getNodeById(selectedNodeId) : nullptr;
                     if (node != nullptr && node->authIndex != CollectionTree::InvalidIndex) {
-                        currentAuth = &selectedTree->auths[node->authIndex];
+                        currentAuth = treeDB.getAuth(node->authIndex);
                     }
                 }
 
