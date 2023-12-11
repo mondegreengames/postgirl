@@ -78,6 +78,29 @@ public:
         return nullptr;
     }
 
+    const CollectionTree* getTreeByNodeId(unsigned int nodeId) const {
+        const unsigned int treeId = (nodeId >> CollectionTree::TreeIdShift);
+
+        for (size_t i = 0; i < trees.Size; i++) {
+            if (trees.Data[i].treeId == treeId) {
+                return &trees.Data[i];
+            }
+        }
+
+        return nullptr;
+    }
+
+    int getNodeIndexById(unsigned int id) {
+        CollectionTree* tree = getTreeByNodeId(id);
+
+        if (tree != nullptr) {
+            return tree->getNodeIndexById(id);
+        }
+
+        return CollectionTree::InvalidIndex;
+    }
+
+
     CollectionNode* getNodeById(unsigned int id) {
         CollectionTree* tree = getTreeByNodeId(id);
 
@@ -87,6 +110,7 @@ public:
 
         return nullptr;
     }
+
 
     void setDirty(unsigned int nodeId, bool dirty) {
         CollectionNode* node = getNodeById(nodeId);

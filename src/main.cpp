@@ -35,15 +35,40 @@
 // another, from the history list.
 int selected  = 0;
 
-void processRequest(std::thread& thread,
-                    pg::Vector<History>& history, const Request& currentRequest,
-                    std::atomic<ThreadStatus>& thread_status)
+const Auth& resolveAuth(CollectionDB& db, int selectedNodeId, const Auth* currentAuth)
 {
-    if (thread_status != IDLE)
-        return;
+    CollectionTree* tree = db.getTreeByNodeId(selectedNodeId);
+    if (tree == nullptr) {
+        return currentAuth == nullptr ? Auth {} : *currentAuth;
+    }
+
+    int index = tree->getNodeIndexById(selectedNodeId);
+
+    while(index != CollectionTree::InvalidId) {
+        const CollectionNode& node = tree->nodes.Data[index];
+
+        if (node.authIndex != CollectionTree::InvalidIndex) {
+            if (db.authsAlive.isSet(node.authIndex)) {
+                return db.auths.Data[node.authIndex];
+            }
+        }
+
+        index = node.parentIndex;
+    }
+
+    return currentAuth == nullptr ? Auth {} : *currentAuth;;
+}
+
+History& addRequestToHistory(pg::Vector<History>& history, const Request& currentRequest, const Auth* currentAuth)
+{
     History hist;
     hist.request.url = currentRequest.url;
-    hist.request.auth = currentRequest.auth;
+    if (currentAuth != nullptr) {
+        hist.requestAuth = *currentAuth;
+    }
+    else {
+        hist.requestAuth.type = AuthType::NONE;
+    }
     hist.request.query_args = currentRequest.query_args;
     hist.request.form_args = currentRequest.form_args;
     hist.request.headers = currentRequest.headers;
@@ -55,35 +80,45 @@ void processRequest(std::thread& thread,
     hist.request.req_type = currentRequest.req_type;
     hist.request.timestamp = Platform::getUtcTimestampNow();
     history.push_back(hist);
+    
     // points to the current (and unfinished) request
     selected = (int)history.size()-1;
+
+    return history.back();
+}
+
+void processRequest(std::thread& thread, History& history, std::atomic<ThreadStatus>& thread_status)
+{
+    if (thread_status != IDLE)
+        return;
     
     thread_status = RUNNING;
 
-    auto& new_history = history.back(); 
-    switch(currentRequest.req_type) { 
+    switch(history.request.req_type) { 
         case RequestType::GET:
         case RequestType::DELETE:
         case RequestType::OPTIONS:
             thread = std::thread(threadRequestGetDelete, 
                 std::ref(thread_status), 
-                new_history.request, 
-                std::ref(new_history.response.result), 
-                std::ref(new_history.response.result_headers.headers), 
-                std::ref(new_history.response.response_code));
+                history.request,
+                history.requestAuth,
+                std::ref(history.response.result), 
+                std::ref(history.response.result_headers.headers), 
+                std::ref(history.response.response_code));
             break;
         case RequestType::POST:
         case RequestType::PATCH:
         case RequestType::PUT:
             thread = std::thread(threadRequestPostPatchPut, 
                 std::ref(thread_status), 
-                new_history.request,
-                std::ref(new_history.response.result), 
-                std::ref(new_history.response.result_headers.headers), 
-                std::ref(new_history.response.response_code));
+                history.request,
+                history.requestAuth,
+                std::ref(history.response.result), 
+                std::ref(history.response.result_headers.headers), 
+                std::ref(history.response.response_code));
             break;
         default:
-            history.back().response.result = pg::String("Invalid request type selected!");
+            history.response.result = pg::String("Invalid request type selected!");
             thread_status = FINISHED;
     }
 }
@@ -303,7 +338,9 @@ int main(int argc, char* argv[])
     workingRequest.url.resize(4098);
     workingRequest.input_json.resize(1024*3200);
     workingRequest.url.set("http://localhost:5000/test_route");
+    Auth workingAuth;
     Request* currentRequest = nullptr;
+    Auth* currentAuth = nullptr;
     unsigned int selectedNodeId = CollectionTree::InvalidId;
     //CollectionTree* selectedTree = nullptr;
 
@@ -446,6 +483,10 @@ int main(int argc, char* argv[])
                     selected = i;
                     workingRequest = histories[i].request;
                     currentRequest = &workingRequest;
+
+                    workingAuth = histories[i].requestAuth;
+                    currentAuth = &workingAuth;
+
                     selectedNodeId = CollectionTree::InvalidId;
                     //currentRequest.req_type = histories[i].request.req_type;
                     //currentRequest.content_type = histories[i].request.content_type;
@@ -530,6 +571,13 @@ int main(int argc, char* argv[])
                 else {
                     currentRequest = nullptr;
                 }
+                
+                if (currentNode->authIndex != CollectionTree::InvalidIndex) {
+                    currentAuth = treeDB.getAuth(currentNode->authIndex);
+                }
+                else {
+                    currentAuth = nullptr;
+                }
             }
 
             if (currentRequest != nullptr) {
@@ -552,7 +600,9 @@ int main(int argc, char* argv[])
                 if (ImGui::InputText("##URL", currentRequest->url.buf_, currentRequest->url.capacity_, ImGuiInputTextFlags_EnterReturnsTrue) ) {
                     ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget
                     treeDB.setDirty(selectedNodeId, true);
-                    processRequest(thread, histories, *currentRequest, thread_status);
+                    const Auth& auth = resolveAuth(treeDB, selectedNodeId, currentAuth);
+                    auto& history = addRequestToHistory(histories, *currentRequest, &auth);
+                    processRequest(thread, history, thread_status);
                 }
                 if (ImGui::IsItemEdited())
                 {
@@ -583,7 +633,9 @@ int main(int argc, char* argv[])
                         sprintf(arg_name, "Name##arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->query_args[i].name[0], currentRequest->query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             treeDB.setDirty(selectedNodeId, true);
-                            processRequest(thread, histories, *currentRequest, thread_status);
+                            const Auth& auth = resolveAuth(treeDB, selectedNodeId, currentAuth);
+                            auto& history = addRequestToHistory(histories, *currentRequest, &auth);
+                            processRequest(thread, history, thread_status);
                         }
                         if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                         ImGui::SameLine();
@@ -591,7 +643,9 @@ int main(int argc, char* argv[])
                         sprintf(arg_name, "Value##arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->query_args[i].value[0], currentRequest->query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             treeDB.setDirty(selectedNodeId, true);
-                            processRequest(thread, histories, *currentRequest, thread_status);
+                            const Auth& auth = resolveAuth(treeDB, selectedNodeId, currentAuth);
+                            auto& history = addRequestToHistory(histories, *currentRequest, &auth);
+                            processRequest(thread, history, thread_status);
                         }
                         if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                         ImGui::SameLine();
@@ -647,19 +701,17 @@ int main(int argc, char* argv[])
             }
             if (ImGui::BeginTabItem("Authorization"))
             {
-                Auth* currentAuth = nullptr;
-
-                if (currentRequest != nullptr) {
-                    if (currentRequest->auth.has_value()) {
-                        currentAuth = &currentRequest->auth.value();
-                    }
-                }
-                else {
-                    auto node = treeDB.getNodeById(selectedNodeId);
-                    if (node != nullptr && node->authIndex != CollectionTree::InvalidIndex) {
-                        currentAuth = treeDB.getAuth(node->authIndex);
-                    }
-                }
+                // if (currentRequest != nullptr) {
+                //     if (currentRequest->auth.has_value()) {
+                //         currentAuth = &currentRequest->auth.value();
+                //     }
+                // }
+                // else {
+                //     auto node = treeDB.getNodeById(selectedNodeId);
+                //     if (node != nullptr && node->authIndex != CollectionTree::InvalidIndex) {
+                //         currentAuth = treeDB.getAuth(node->authIndex);
+                //     }
+                // }
 
                 if (currentAuth != nullptr) {
                     const char* previewText = nullptr;
@@ -713,7 +765,7 @@ int main(int argc, char* argv[])
                                     tokenAuth.attributes.push_back(AuthAttribute{ .key = "password", .value = clientSecret });
 
                                     Request tokenRequest;
-                                    tokenRequest.auth = tokenAuth;
+                                    //tokenRequest.auth = tokenAuth;
                                     tokenRequest.url = tokenUrl;
                                     tokenRequest.req_type = RequestType::POST;
                                     tokenRequest.body_type = BodyType::URL_ENCODED;
@@ -722,8 +774,8 @@ int main(int argc, char* argv[])
                                     if (audience != nullptr) {
                                         tokenRequest.form_args.push_back(Argument{ .name = "audience", .value = audience, .arg_type = 0 });
                                     }
-
-                                    processRequest(thread, histories, tokenRequest, thread_status);
+                                    auto& history = addRequestToHistory(histories, tokenRequest, &tokenAuth);
+                                    processRequest(thread, history, thread_status);
                                 }
                             }
                         }
@@ -756,14 +808,18 @@ int main(int argc, char* argv[])
                         sprintf(arg_name, "Name##header arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->headers.headers[i].key[0], currentRequest->headers.headers[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             treeDB.setDirty(selectedNodeId, true);
-                            processRequest(thread, histories, *currentRequest, thread_status);
+                            const Auth& auth = resolveAuth(treeDB, selectedNodeId, currentAuth);
+                            auto& history = addRequestToHistory(histories, *currentRequest, &auth);
+                            processRequest(thread, history, thread_status);
                         }
                         ImGui::SameLine();
                         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
                         sprintf(arg_name, "Value##header arg value%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->headers.headers[i].value[0], currentRequest->headers.headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             treeDB.setDirty(selectedNodeId, true);
-                            processRequest(thread, histories, *currentRequest, thread_status);
+                            const Auth& auth = resolveAuth(treeDB, selectedNodeId, currentAuth);
+                            auto& history = addRequestToHistory(histories, *currentRequest, &auth);
+                            processRequest(thread, history, thread_status);
                         }
                         ImGui::SameLine();
                         char btn_name[32];
@@ -881,14 +937,18 @@ int main(int argc, char* argv[])
                                 sprintf(arg_name, "Name##arg name%d", i);
                                 if (ImGui::InputText(arg_name, &currentRequest->form_args[i].name[0], currentRequest->form_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                                     treeDB.setDirty(selectedNodeId, true);
-                                    processRequest(thread, histories, *currentRequest, thread_status);
+                                    const Auth& auth = resolveAuth(treeDB, selectedNodeId, currentAuth);
+                                    auto& history = addRequestToHistory(histories, *currentRequest, &auth);
+                                    processRequest(thread, history, thread_status);
                                 }
                                 ImGui::SameLine();
                                 ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
                                 sprintf(arg_name, "Value##arg name%d", i);
                                 if (ImGui::InputText(arg_name, &currentRequest->form_args[i].value[0], currentRequest->form_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                                     treeDB.setDirty(selectedNodeId, true);
-                                    processRequest(thread, histories, *currentRequest, thread_status);
+                                    const Auth& auth = resolveAuth(treeDB, selectedNodeId, currentAuth);
+                                    auto& history = addRequestToHistory(histories, *currentRequest, &auth);
+                                    processRequest(thread, history, thread_status);
                                 }
                                 ImGui::SameLine();
                                 if (currentRequest->form_args[i].arg_type == 1) {

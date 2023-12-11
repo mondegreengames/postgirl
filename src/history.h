@@ -5,6 +5,7 @@
 
 typedef struct History {
     Request request;
+    Auth requestAuth;
     Response response;
 } History;
 

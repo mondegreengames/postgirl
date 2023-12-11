@@ -66,7 +66,7 @@ public:
 
     void remove(int index);
 
-    CollectionNode* getNodeById(unsigned int id)
+    int getNodeIndexById(unsigned int id)
     {
         if (nodeHashTable.needsRebuilding) {
             rebuildIndexHash();
@@ -78,8 +78,7 @@ public:
             const int index = (hash + i) % nodeHashTable.capacity;
             if (nodeHashTable.alive.isSet(index) == true) {
                 if (nodeHashTable.ids[index] == id) {
-                    CollectionNode* node = &nodes[nodeHashTable.indices[index]];
-                    return node;
+                    return nodeHashTable.indices[index];
                 }
             }
             else {
@@ -87,7 +86,17 @@ public:
             }
         }
                 
-        return nullptr;
+        return InvalidIndex;
+    }
+
+    CollectionNode* getNodeById(unsigned int id)
+    {
+        int index = getNodeIndexById(id);
+        if (index == InvalidIndex) {
+            return nullptr;
+        }
+
+        return &nodes[index];
     }
 
     void setDirty(int id, bool dirty) {

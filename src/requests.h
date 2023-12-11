@@ -185,7 +185,7 @@ struct Auth
 typedef struct Request
 {
     pg::String url;
-    std::optional<Auth> auth;
+    //std::optional<Auth> auth;
     pg::Vector<Argument> query_args;
     pg::Vector<Argument> form_args;
     HeaderKeyValueCollection headers;
@@ -200,7 +200,7 @@ typedef struct Request
 
     Request(const Request& request)
         : url(request.url), 
-        auth(request.auth), 
+        //auth(request.auth), 
         query_args(request.query_args), 
         form_args(request.form_args), 
         headers(request.headers), 
@@ -231,10 +231,10 @@ typedef struct Response
 pg::String buildUrl(const char* baseUrl, const pg::Vector<Argument>& args);
 bool deconstructUrl(const char* url, pg::Vector<Argument>& args);
 
-void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, Request request,
+void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, Request request, Auth auth,
     pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code);
 
-void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request request,
+void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request request, Auth auth,
     pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code);
 
 const char* RequestTypeToString(RequestType req);

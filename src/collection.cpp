@@ -159,14 +159,7 @@ bool parseRequest(const rapidjson::Value& request, Request& result)
         }
     }
 
-    if (request.HasMember("auth") && request["auth"].IsObject())
-    {
-        const auto& auth = request["auth"];
-        Auth authObj;
-        if (parseAuth(auth, authObj)) {
-            result.auth = authObj;
-        }
-    }
+    
 
     // TODO: the rest
 
@@ -225,6 +218,16 @@ bool parseItem(const rapidjson::Value& item, Item& result)
         {
             result.name = name == nullptr ? pg::String("") : pg::String(name);
             result.data = request;
+
+            if (requestJson.HasMember("auth") && requestJson["auth"].IsObject())
+            {
+                const auto& auth = requestJson["auth"];
+                Auth authObj;
+                if (parseAuth(auth, authObj)) {
+                    result.auth = authObj;
+                }
+            }
+
             return true;
         }
     }

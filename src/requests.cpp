@@ -276,7 +276,7 @@ void addAuthentication(CURL* curl, const Auth& authentication)
     // TODO: The rest
 }
 
-void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, Request request,
+void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, Request request, Auth auth,
     pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
 { 
     CURLcode res;
@@ -317,9 +317,7 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, Request re
         }
     }
 
-    if (request.auth.has_value()) {
-        addAuthentication(curl, request.auth.value());
-    }
+    addAuthentication(curl, auth);
 
     curl_easy_setopt(curl, CURLOPT_URL, request.url.buf_);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
@@ -350,7 +348,7 @@ void threadRequestGetDelete(std::atomic<ThreadStatus>& thread_status, Request re
 
 
 
-void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request request,
+void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request request, Auth auth,
     pg::String& thread_result, pg::Vector<HeaderKeyValue>& response_headers, int& response_code) 
 { 
     CURL *curl;
@@ -466,9 +464,7 @@ void threadRequestPostPatchPut(std::atomic<ThreadStatus>& thread_status, Request
         }
         curl_easy_setopt(curl, CURLOPT_URL, request.url.buf_);
 
-        if (request.auth.has_value()) {
-            addAuthentication(curl, request.auth.value());
-        }
+        addAuthentication(curl, auth);
 
         if (request.req_type == RequestType::POST) {
             curl_easy_setopt(curl, CURLOPT_POST, 1L);
