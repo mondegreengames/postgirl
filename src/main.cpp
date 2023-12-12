@@ -37,9 +37,11 @@ int selected  = 0;
 
 const Auth& resolveAuth(CollectionDB& db, int selectedNodeId, const Auth* currentAuth)
 {
+    static Auth noauth;
+
     CollectionTree* tree = db.getTreeByNodeId(selectedNodeId);
     if (tree == nullptr) {
-        return currentAuth == nullptr ? Auth {} : *currentAuth;
+        return currentAuth == nullptr ? noauth : *currentAuth;
     }
 
     int index = tree->getNodeIndexById(selectedNodeId);
@@ -56,7 +58,7 @@ const Auth& resolveAuth(CollectionDB& db, int selectedNodeId, const Auth* curren
         index = node.parentIndex;
     }
 
-    return currentAuth == nullptr ? Auth {} : *currentAuth;;
+    return currentAuth == nullptr ? noauth : *currentAuth;;
 }
 
 History& addRequestToHistory(pg::Vector<History>& history, const Request& currentRequest, const Auth* currentAuth)

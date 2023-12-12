@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <cstdio>
+#include <cassert>
 
 namespace Platform
 {
@@ -53,5 +54,70 @@ namespace Platform
         }
 
         return false;
+    }
+
+    struct VirtualAllocHeader {
+        size_t reservedByteCount;
+        size_t committedByteCount;
+        size_t sentinel;
+    };
+
+    void* virtualAlloc(size_t numBytes, size_t maxSize)
+    {
+        constexpr size_t headerSize = sizeof(VirtualAllocHeader);
+
+        // convert byte counts into page counts
+        const size_t commitByteCount = numBytes + headerSize;
+        const size_t reserveByteCount = maxSize;
+
+        if (commitByteCount > reserveByteCount) return nullptr;
+
+        void* ptr = VirtualAlloc(nullptr, maxSize, MEM_RESERVE, PAGE_NOACCESS);
+        if (ptr == nullptr) {
+            return nullptr;
+        }
+
+        if (VirtualAlloc(ptr, commitByteCount, MEM_COMMIT, PAGE_READWRITE) == nullptr) {
+            VirtualFree(ptr, 0, MEM_RELEASE);
+            return nullptr;
+        }
+
+        VirtualAllocHeader* header = (VirtualAllocHeader*)ptr;
+        header->reservedByteCount = reserveByteCount;
+        header->committedByteCount = commitByteCount;
+        header->sentinel = (size_t)-1;
+
+        return (char*)ptr + headerSize;
+    }
+
+    bool virtualGrow(void* original, size_t newNumBytes)
+    {
+        VirtualAllocHeader* header = (VirtualAllocHeader*)((char*)original - sizeof(VirtualAllocHeader));
+        assert(header->sentinel == (size_t)-1 && "Memory stomping detected! Something wrote past the beginning of the allocated space!");
+
+        const size_t commitByteCount = newNumBytes + sizeof(VirtualAllocHeader);
+        
+        if (header->reservedByteCount < commitByteCount) {
+            return false; // out of space
+        }
+
+        if (header->committedByteCount >= commitByteCount) {
+            return true; // we've already committed enough memory
+        }
+
+        if (VirtualAlloc(header, newNumBytes, MEM_COMMIT, PAGE_READWRITE) != nullptr) {
+            header->committedByteCount = commitByteCount;
+            return true;
+        }
+
+        return false;
+    }
+
+    void virtualFree(void* original)
+    {
+        VirtualAllocHeader* header = (VirtualAllocHeader*)((char*)original - sizeof(VirtualAllocHeader));
+        assert(header->sentinel == (size_t)-1 && "Memory stomping detected! Something wrote past the beginning of the allocated space!");
+
+        VirtualFree(header, 0, MEM_RELEASE);
     }
 }
