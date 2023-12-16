@@ -9,7 +9,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++17")
 include_directories("third_party/"
 					"third_party/imgui/"
                     "third_party/gl3w/"
-                    "third_party/llhttp/include/"
+                    "third_party/llhttp/include/",
+                    "third_party/tinyfiledialog/"
                     )
 
 file(GLOB all_postgirl_src
@@ -18,7 +19,8 @@ file(GLOB all_postgirl_src
     "third_party/gl3w/GL/gl3w.c"
     "third_party/llhttp/src/api.c",
     "third_party/llhttp/src/http.c",
-    "third_party/llhttp/src/llhttp.c"
+    "third_party/llhttp/src/llhttp.c",
+    "third_party/tinyfiledialog/tinyfiledialogs.c"
 )
 
 find_package(CURL REQUIRED)

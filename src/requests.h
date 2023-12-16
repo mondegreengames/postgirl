@@ -180,6 +180,50 @@ struct Auth
 
         return nullptr;
     }
+
+    // the value of `result` can be invalidated if any more attributes are added to the authentication!
+    bool findAttributeValue(const char* name, pg::String** result) {
+        for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
+            if (strcmp(itr->key.buf_, name) == 0) {
+                if (result != nullptr) {
+                    *result = &itr->value;
+                }
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool addAttributeIfDoesntExist(const char* name, const char* value) {
+        if (findAttributeValue(name) == nullptr) {
+            attributes.push_back(AuthAttribute{ .key = name, .value = value });
+            
+            return true;
+        }
+
+        return false;
+    }
+
+    void addOrUpdateAttribute(const char* name, const char* value) {
+        pg::String* str;
+        if (findAttributeValue(name, &str) == false) {
+            attributes.push_back(AuthAttribute{ .key = name, .value = value });
+        }
+        else {
+            str->set(value);
+        }
+    }
+
+    bool removeAttribute(const char* name) {
+        for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
+            if (strcmp(itr->key.buf_, name) == 0) {
+                attributes.erase(itr);
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 typedef struct Request

@@ -47,4 +47,5 @@ struct Collection
     pg::Vector<Variable> variables;
 
     static bool Load(const char* filename, Collection& result);
+    static bool Load(FILE* fp, Collection& result);
 };

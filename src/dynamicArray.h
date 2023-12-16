@@ -68,5 +68,5 @@ public:
 
 
 private:
-    inline int          _grow_capacity(int sz) const            { int new_capacity = Capacity ? (Capacity + Capacity/2) : 8; return new_capacity > sz ? new_capacity : sz; }
+    inline size_t       _grow_capacity(size_t sz) const            { size_t new_capacity = Capacity ? (Capacity + Capacity/2) : 8; return new_capacity > sz ? new_capacity : sz; }
 };

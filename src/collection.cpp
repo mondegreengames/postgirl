@@ -277,22 +277,29 @@ bool parseItem(const rapidjson::Value& item, Item& result)
 
 bool Collection::Load(const char* filename, Collection& result)
 {
-    FILE *fp = fopen(filename, "rb");
+    FILE* fp = fopen(filename, "rb");
     if (fp == nullptr) return false;
 
+    bool r = Load(fp, result);
+    
+    fclose(fp);
+
+    return r;
+}
+
+bool Collection::Load(FILE* fp, Collection& result)
+{
     char readBuffer[1024 * 64];
     rapidjson::FileReadStream stream(fp, readBuffer, sizeof(readBuffer));
 
     rapidjson::Document document;
     if (document.ParseStream(stream).HasParseError())
     {
-        fclose(fp);
         return false;
     }
 
     if (document.HasMember("item") == false)
     {
-        fclose(fp);
         return false;
     }
 
@@ -327,6 +334,5 @@ bool Collection::Load(const char* filename, Collection& result)
         }
     }
 
-    fclose(fp);
     return true;
 }

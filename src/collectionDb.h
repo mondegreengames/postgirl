@@ -160,7 +160,7 @@ public:
         return nullptr;
     }
 
-    bool buildTreeFromCollection(const Collection& collection, int treeId, CollectionTree& result)
+    bool buildTreeFromCollection(const Collection& collection, CollectionTree& result)
     {
         const char* name = nullptr;
         if (collection.name.buf_[0] != 0) {

@@ -8,6 +8,7 @@
 #include "imgui_impl_opengl3.h"
 #include "GL/gl3w.h"    // This example is using gl3w to access OpenGL functions (because it is small). You may use glew/glad/glLoadGen/etc. whatever already works for you.
 #include <GLFW/glfw3.h>
+#include "tinyfiledialogs.h"
 #include "pgstring.h"
 #include "pgvector.h"
 #include "rapidjson/document.h"
@@ -325,7 +326,7 @@ int main(int argc, char* argv[])
         Collection collection;
         if (Collection::Load(settings.CollectionList[i].buf_, collection)) {
             CollectionTree tree;
-            treeDB.buildTreeFromCollection(collection, i + 1, tree);
+            treeDB.buildTreeFromCollection(collection, tree);
         }
     }
 
@@ -541,8 +542,47 @@ int main(int argc, char* argv[])
             if (isNodeSelected == false || isRequest) {
                 ImGui::EndDisabled();
             }
-
             ImGui::EndDisabled();
+
+            ImGui::SameLine();
+            if (ImGui::Button("Load collection...")) {
+                const char* filters[] = { "*.json", "*.*" };
+                char* paths = tinyfd_openFileDialog("Import collection", nullptr, 2, filters, "Collections", 1);
+
+                char* context;
+#ifdef _WIN32
+                char* path = strtok_s(paths, "|", &context);
+#else
+                char* path = strtok_r(paths, "|", &context);
+#endif
+                while (path != nullptr) {
+
+                    // load the collection
+                    Collection l;
+                    if (Collection::Load(path, l)) {
+
+                        // add to collection tree
+                        CollectionTree tree;
+                        if (treeDB.buildTreeFromCollection(l, tree)) {
+                            printf("Added collection %s\n", path);
+
+                            // save in settings
+                            settings.CollectionList.push_back(path);
+                        }
+                    }
+                    else {
+                        printf("Unable to load %s\n", path);
+                    }
+
+#ifdef _WIN32
+                    path = strtok_s(nullptr, "|", &context);
+#else
+                    path = strtok_r(nullptr, "|", &context);
+#endif
+                }
+
+                Settings::Save("settings.json", settings);
+            }
 
             for (int i = 0; i < treeDB.trees.Size; i++) {
                 int selectedId = renderCollections(treeDB, treeDB.trees.Data[i], selectedNodeId);
@@ -573,7 +613,7 @@ int main(int argc, char* argv[])
                 else {
                     currentRequest = nullptr;
                 }
-                
+
                 if (currentNode->authIndex != CollectionTree::InvalidIndex) {
                     currentAuth = treeDB.getAuth(currentNode->authIndex);
                 }
@@ -723,11 +763,15 @@ int main(int argc, char* argv[])
 
                     if (ImGui::BeginCombo("Type", previewText)) {
 
-                        ImGui::Selectable("Inherit auth from parent");
+                        if (ImGui::Selectable("Inherit auth from parent")) {
+                            // TODO
+                        }
                         
                         for (int i = 0; i < (int)AuthType::_COUNT; i++) {
                             const bool selected = currentAuth->type == (AuthType)i;
-                            ImGui::Selectable(authTypeUIStrings[i], selected);
+                            if (ImGui::Selectable(authTypeUIStrings[i], selected)) {
+                                currentAuth->type = (AuthType)i;
+                            }
                         }
 
                         ImGui::EndCombo();
@@ -779,6 +823,33 @@ int main(int argc, char* argv[])
                                     auto& history = addRequestToHistory(histories, tokenRequest, &tokenAuth);
                                     processRequest(thread, history, thread_status);
                                 }
+                            }
+                        }
+                    }
+                    else if (currentAuth->type == AuthType::APIKEY) {
+                        pg::String* key = nullptr, * value = nullptr, *in = nullptr;
+
+                        currentAuth->addAttributeIfDoesntExist("key", "");
+                        currentAuth->addAttributeIfDoesntExist("value", "");
+
+                        currentAuth->findAttributeValue("key", &key);
+                        currentAuth->findAttributeValue("value", &value);
+                        currentAuth->findAttributeValue("in", &in);
+
+                        if (key != nullptr && value != nullptr) {
+                            ImGui::InputText("Key", key->buf_, key->capacity_);
+                            ImGui::InputText("Value", value->buf_, value->capacity_);
+
+                            if (ImGui::BeginCombo("Add to", in == nullptr ? "Header" : in->buf_)) {
+
+                                if (ImGui::Selectable("Header", in == nullptr || strcmp(in->buf_, "header") == 0)) {
+                                    currentAuth->removeAttribute("in");
+                                }
+                                if (ImGui::Selectable("Query params", in != nullptr && strcmp(in->buf_, "query") == 0)) {
+                                    currentAuth->addOrUpdateAttribute("in", "query");
+                                }
+
+                                ImGui::EndCombo();
                             }
                         }
                     }
