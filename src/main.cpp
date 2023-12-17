@@ -8,6 +8,7 @@
 #include "imgui_impl_opengl3.h"
 #include "GL/gl3w.h"    // This example is using gl3w to access OpenGL functions (because it is small). You may use glew/glad/glLoadGen/etc. whatever already works for you.
 #include <GLFW/glfw3.h>
+#include "uiUtils.h"
 #include "tinyfiledialogs.h"
 #include "pgstring.h"
 #include "pgvector.h"
@@ -51,8 +52,9 @@ const Auth& resolveAuth(CollectionDB& db, int selectedNodeId, const Auth* curren
         const CollectionNode& node = tree->nodes.Data[index];
 
         if (node.authIndex != CollectionTree::InvalidIndex) {
-            if (db.authsAlive.isSet(node.authIndex)) {
-                return db.auths.Data[node.authIndex];
+            Auth* auth = db.auths.tryGetPtr(node.authIndex);
+            if (auth != nullptr) {
+                return *auth;
             }
         }
 
@@ -143,11 +145,11 @@ static inline float GetWindowContentRegionWidth()
     return ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x; 
 }
 
-int renderCollections(CollectionDB& collectionDB, CollectionTree& tree, unsigned int currentSelectedId)
+NodeId renderCollections(CollectionDB& collectionDB, CollectionTree& tree, NodeId currentSelectedId)
 {
     ImGuiContext* ctx = ImGui::GetCurrentContext();
 
-    int selectedNodeId = 0;
+    NodeId selectedNodeId = CollectionTree::InvalidId;
     int dirtyFlag = CollectionTree::InvalidIndex;
     bool selected = false;
 
@@ -763,10 +765,6 @@ int main(int argc, char* argv[])
 
                     if (ImGui::BeginCombo("Type", previewText)) {
 
-                        if (ImGui::Selectable("Inherit auth from parent")) {
-                            // TODO
-                        }
-                        
                         for (int i = 0; i < (int)AuthType::_COUNT; i++) {
                             const bool selected = currentAuth->type == (AuthType)i;
                             if (ImGui::Selectable(authTypeUIStrings[i], selected)) {
@@ -777,31 +775,44 @@ int main(int argc, char* argv[])
                         ImGui::EndCombo();
                     }
 
-                    for (int i=0; i< (int)currentAuth->attributes.size(); i++) {
-                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
-                        char arg_name[32];
-                        sprintf(arg_name, "Name##auth arg name%d", i);
-                        if (ImGui::InputText(arg_name, &currentAuth->attributes[i].key[0], currentAuth->attributes[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            // TODO
-                        }
-                        ImGui::SameLine();
-                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
-                        sprintf(arg_name, "Value##auth arg value%d", i);
-                        if (ImGui::InputText(arg_name, &currentAuth->attributes[i].value[0], currentAuth->attributes[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                            // TODO
-                        }
+                   
+                    if (currentAuth->type == AuthType::NONE || currentAuth->type == AuthType::INHERIT) {
+                        // nothing
                     }
-
-                    // TODO: this is temporary, just to have the minimum functionality needed to generate an OAuth2 token
-                    if (currentAuth->type == AuthType::OAUTH2) {
+                    else if (currentAuth->type == AuthType::OAUTH2) {
                         const char* grantType = currentAuth->findAttributeValue("grant_type");
+
+                        const char* values[] = {
+                            "authorization_code",
+                            "client_credentials",
+                            "device_code",
+                            "refresh_token",
+                        };
+                        const char* texts[] = {
+                            "Authorization code",
+                            "Client credentials",
+                            "Device code",
+                            "Refresh token"
+                        };
+
+                        grantType = renderComboBox("Grant type", grantType, 4, values, texts);
+
+                        currentAuth->addOrUpdateAttribute("grant_type", grantType);
+
                         if (strcmp(grantType, "client_credentials") == 0) {
+                            // TODO: this is temporary, just to have the minimum functionality needed to generate an OAuth2 token
+                            auto& tokenUrl = currentAuth->reserveAttribute("accessTokenUrl", nullptr);
+                            auto& clientId = currentAuth->reserveAttribute("clientId", nullptr);
+                            auto& clientSecret = currentAuth->reserveAttribute("clientSecret", nullptr);
+                            auto& audience = currentAuth->reserveAttribute("audience", nullptr);
 
-                            const char* tokenUrl = currentAuth->findAttributeValue("accessTokenUrl");
-                            const char* clientId = currentAuth->findAttributeValue("clientId");
-                            const char* clientSecret = currentAuth->findAttributeValue("clientSecret");
+                            ImGui::InputText("Token url", tokenUrl.buf_, tokenUrl.capacity_);
+                            ImGui::InputText("Client id", clientId.buf_, tokenUrl.capacity_);
+                            ImGui::InputText("Client secret", clientSecret.buf_, clientSecret.capacity_);
+                            ImGui::InputText("Audience", audience.buf_, audience.capacity_);
 
-                            if (tokenUrl != nullptr && clientId != nullptr && clientSecret != nullptr) {
+
+                            if (tokenUrl.buf_[0] != 0 && clientId.buf_[0] != 0 && clientSecret.buf_[0] != 0) {
                                 if (ImGui::Button("Get token")) {
                                     const char* audience = currentAuth->findAttributeValue("audience");
 
@@ -824,6 +835,9 @@ int main(int argc, char* argv[])
                                     processRequest(thread, history, thread_status);
                                 }
                             }
+                        }
+                        else {
+                            ImGui::Text("TODO: support this OAuth2 grant type");
                         }
                     }
                     else if (currentAuth->type == AuthType::APIKEY) {
@@ -853,12 +867,26 @@ int main(int argc, char* argv[])
                             }
                         }
                     }
+                    else {
+                        for (int i=0; i< (int)currentAuth->attributes.size(); i++) {
+                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
+                            char arg_name[32];
+                            sprintf(arg_name, "Name##auth arg name%d", i);
+                            if (ImGui::InputText(arg_name, &currentAuth->attributes[i].key[0], currentAuth->attributes[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                                // TODO
+                            }
+                            ImGui::SameLine();
+                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
+                            sprintf(arg_name, "Value##auth arg value%d", i);
+                            if (ImGui::InputText(arg_name, &currentAuth->attributes[i].value[0], currentAuth->attributes[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                                // TODO
+                            }
+                        }
+                    }
                 }
                 else {
                     const char* inheritText = "Inherit auth from parent";
                     if (ImGui::BeginCombo("Type", inheritText)) {
-
-                        ImGui::Selectable(inheritText, true);
 
                         for (int i = 0; i < (int)AuthType::_COUNT; i++) {
                             ImGui::Selectable(authTypeUIStrings[i]);

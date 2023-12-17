@@ -316,6 +316,9 @@ bool Collection::Load(FILE* fp, Collection& result)
     {
         parseAuth(document["auth"], result.auth);
     }
+    else {
+        result.auth.type = AuthType::INHERIT;
+    }
 
     if (document.HasMember("info") && document["info"].IsObject())
     {

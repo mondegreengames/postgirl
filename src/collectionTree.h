@@ -5,9 +5,11 @@
 #include "dynamicBitSet.h"
 #include "collection.h"
 
+typedef unsigned int NodeId;
+
 struct CollectionNode
 {
-    unsigned int id;
+    NodeId id;
     int requestIndex;
     int nameIndex;
     int authIndex;
@@ -28,14 +30,14 @@ class CollectionTree
     struct {
         int capacity;
         DynamicBitSet alive;
-        unsigned int* ids;
+        NodeId* ids;
         unsigned int* indices;
         bool needsRebuilding;
     } nodeHashTable;
 
 public:
 
-    static constexpr unsigned int InvalidId = 0;
+    static constexpr NodeId InvalidId = 0;
     static constexpr int InvalidIndex = -1;
     static constexpr int TreeIdShift = 16;
 
@@ -66,7 +68,7 @@ public:
 
     void remove(int index);
 
-    int getNodeIndexById(unsigned int id)
+    int getNodeIndexById(NodeId id)
     {
         if (nodeHashTable.needsRebuilding) {
             rebuildIndexHash();
@@ -89,7 +91,7 @@ public:
         return InvalidIndex;
     }
 
-    CollectionNode* getNodeById(unsigned int id)
+    CollectionNode* getNodeById(NodeId id)
     {
         int index = getNodeIndexById(id);
         if (index == InvalidIndex) {
@@ -99,14 +101,14 @@ public:
         return &nodes[index];
     }
 
-    void setDirty(int id, bool dirty) {
+    void setDirty(NodeId id, bool dirty) {
         CollectionNode* node = getNodeById(id);
         if (node != nullptr) {
             node->isDirty = dirty;
         }
     }
 
-    bool isDirty(int id) {
+    bool isDirty(NodeId id) {
         CollectionNode* node = getNodeById(id);
         if (node != nullptr) {
             return node->isDirty;

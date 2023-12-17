@@ -42,6 +42,7 @@ typedef enum ThreadStatus {
     DEFINE_LAST_ENUM_VALUE(XML, "application/xml", "XML")
 
 #define DEFINE_AUTH_TYPES \
+    DEFINE_ENUM_VALUE(INHERIT, "inherit", "Inherit auth from parent") \
     DEFINE_ENUM_VALUE(NONE, "none", "None") \
     DEFINE_ENUM_VALUE(APIKEY, "apikey", "API key") \
     DEFINE_ENUM_VALUE(AWSV4, "awsv4", "AWS v4") \
@@ -167,7 +168,7 @@ struct Auth
     pg::Vector<AuthAttribute> attributes;
 
     Auth()
-        : type(AuthType::NONE)
+        : type(AuthType::INHERIT)
     {}
 
     const char* findAttributeValue(const char* name) const
@@ -213,6 +214,24 @@ struct Auth
         else {
             str->set(value);
         }
+    }
+
+    // adds the attribute if it doesn't exist, and returns a reference to the value
+    pg::String& reserveAttribute(const char* name, const char* defaultValue) {
+        pg::String* str;
+        if (findAttributeValue(name, &str) == false) {
+
+            AuthAttribute attribute;
+            attribute.value = name;
+            
+            if (defaultValue != nullptr) {
+                attribute.value = defaultValue;
+            }
+
+            attributes.push_back(attribute);
+            return attributes.back().value;
+        }
+        return *str;
     }
 
     bool removeAttribute(const char* name) {

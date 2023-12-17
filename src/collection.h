@@ -33,7 +33,7 @@ struct Variable
 struct Item
 {
     pg::String name;
-    std::optional<Auth> auth;
+    Auth auth;
     pg::Vector<Variable> variables;
 
     std::variant<pg::Vector<Item>, Request> data;

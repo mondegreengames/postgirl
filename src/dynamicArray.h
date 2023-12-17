@@ -70,3 +70,95 @@ public:
 private:
     inline size_t       _grow_capacity(size_t sz) const            { size_t new_capacity = Capacity ? (Capacity + Capacity/2) : 8; return new_capacity > sz ? new_capacity : sz; }
 };
+
+template<typename T>
+class DynamicDeletableArray {
+public:
+    class DynamicDeletableArrayIterator
+    {
+        DynamicDeletableArray<T>& parent;
+        size_t index;
+
+    public:
+
+        DynamicDeletableArrayIterator(DynamicDeletableArray<T>& parent)
+            : parent(parent), index(0)
+        {}
+
+        T* getPtr() {
+            assert(index < parent.data.Size);
+            assert(parent.alive.isSet(index) == true);
+
+            return &parent.data.Data[index];
+        }
+        
+        T& get() {
+            assert(index < parent.data.Size);
+            assert(parent.alive.isSet(index) == true);
+
+            return parent.data.Data[index];
+        }
+
+        bool next() {
+            index++;
+            while(index < parent.data.Size && parent.alive.isSet(index) == false) {
+                index++;
+            }
+
+            return index < parent.data.Size && parent.alive.isSet(index);
+        }
+    };
+
+    DynamicArray<T> data;
+    DynamicBitSet alive;
+
+    inline size_t push_back(const T& v) {
+        size_t index = data.push_back(v);
+        alive.set(index, true);
+        return index;
+    }
+
+    inline void pop_back() {
+        if (data.Size > 0) {
+            alive.set(data.Size - 1, false);
+            data.pop_back();
+        }
+    }
+
+    inline size_t insert(const T& v) {
+        int index = alive.findFirstWithValue(false);
+        if (index >= 0 && (unsigned int)index < data.Size) {
+            alive.set(index, true);
+            data.Data[index] = v;
+            return index;
+        }
+
+        return push_back(v);
+    }
+
+    inline bool erase(size_t index) {
+        if (index < data.Size) {
+            alive.set(index, false);
+            return true;
+        }
+
+        return false;
+    }
+
+    inline bool tryGet(size_t index, T& result) {
+        if (alive.isSet(index) && index < data.Size) {
+            result = data.Data[index];
+            return true;
+        }
+
+        return false;
+    }
+
+    inline T* tryGetPtr(size_t index) {
+        if (alive.isSet(index) && index < data.Size) {
+            return &data.Data[index];
+        }
+
+        return nullptr;
+    }
+};

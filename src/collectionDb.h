@@ -16,14 +16,11 @@ class CollectionDB
 public:
     unsigned int nextTreeId;
 
-    DynamicArray<pg::String> names;
-    DynamicArray<Request> requests;
-    DynamicArray<Auth> auths;
+    DynamicDeletableArray<pg::String> names;
+    DynamicDeletableArray<Request> requests;
+    DynamicDeletableArray<Auth> auths;
+    DynamicDeletableArray<Response> responses;
     DynamicArray<CollectionTree> trees;
-
-    DynamicBitSet namesAlive;
-    DynamicBitSet requestsAlive;
-    DynamicBitSet authsAlive;
 
     CollectionDB()
         : nextTreeId(1)
@@ -31,42 +28,18 @@ public:
     }
 
     size_t addName(const pg::String& name) {
-        auto nameIndex = (size_t)namesAlive.findFirstWithValue(false);
-        if (nameIndex >= 0 && nameIndex < names.Size) {
-            names.Data[nameIndex] = name;
-        }
-        else {
-            nameIndex = names.push_back(name);
-        }
-        namesAlive.set(nameIndex, true);
-        return (size_t)nameIndex;
+        return names.insert(name);
     }
 
     size_t addAuth(const Auth& auth) {
-        auto authIndex = (size_t)authsAlive.findFirstWithValue(false);
-        if (authIndex >= 0 && authIndex < auths.Size) {
-            auths.Data[authIndex] = auth;
-        }
-        else {
-            authIndex = auths.push_back(auth);
-        } 
-        authsAlive.set(authIndex, true);
-        return (size_t)authIndex;
+        return auths.insert(auth);
     }
 
     size_t addRequest(const Request& request) {
-        auto requestIndex = (size_t)requestsAlive.findFirstWithValue(false);
-        if (requestIndex >= 0 && requestIndex < requests.Size) {
-            requests.Data[requestIndex] = request;
-        }
-        else {
-            requestIndex = requests.push_back(request);
-        }
-        requestsAlive.set(requestIndex, true);
-        return (size_t)requestIndex;
+        return requests.insert(request);
     }
 
-    CollectionTree* getTreeByNodeId(unsigned int nodeId) {
+    CollectionTree* getTreeByNodeId(NodeId nodeId) {
         const unsigned int treeId = (nodeId >> CollectionTree::TreeIdShift);
 
         for (size_t i = 0; i < trees.Size; i++) {
@@ -78,7 +51,7 @@ public:
         return nullptr;
     }
 
-    const CollectionTree* getTreeByNodeId(unsigned int nodeId) const {
+    const CollectionTree* getTreeByNodeId(NodeId nodeId) const {
         const unsigned int treeId = (nodeId >> CollectionTree::TreeIdShift);
 
         for (size_t i = 0; i < trees.Size; i++) {
@@ -90,7 +63,7 @@ public:
         return nullptr;
     }
 
-    int getNodeIndexById(unsigned int id) {
+    int getNodeIndexById(NodeId id) {
         CollectionTree* tree = getTreeByNodeId(id);
 
         if (tree != nullptr) {
@@ -101,7 +74,7 @@ public:
     }
 
 
-    CollectionNode* getNodeById(unsigned int id) {
+    CollectionNode* getNodeById(NodeId id) {
         CollectionTree* tree = getTreeByNodeId(id);
 
         if (tree != nullptr) {
@@ -112,14 +85,14 @@ public:
     }
 
 
-    void setDirty(unsigned int nodeId, bool dirty) {
+    void setDirty(NodeId nodeId, bool dirty) {
         CollectionNode* node = getNodeById(nodeId);
         if (node != nullptr) {
             node->isDirty = dirty;
         }
     }
 
-    bool isDirty(int id) {
+    bool isDirty(NodeId id) {
         CollectionNode* node = getNodeById(id);
         if (node != nullptr) {
             return node->isDirty;
@@ -129,35 +102,24 @@ public:
     }
 
     pg::String* getName(int index) {
-        if (namesAlive.isSet(index)) {
-            return &names.Data[index];
-        }
-
-        return nullptr;
+        return names.tryGetPtr(index);
     }
 
     const char* getNameStr(int index) {
-        if (namesAlive.isSet(index)) {
-            return names.Data[index].buf_;
+        auto ptr = names.tryGetPtr(index);
+        if (ptr != nullptr) {
+            return ptr->buf_;
         }
 
         return nullptr;
     }
 
     Request* getRequest(int index) {
-        if (requestsAlive.isSet(index)) {
-            return &requests.Data[index];
-        }
-
-        return nullptr;
+        return requests.tryGetPtr(index);
     }
 
     Auth* getAuth(int index) {
-        if (authsAlive.isSet(index)) {
-            return &auths.Data[index];
-        }
-
-        return nullptr;
+        return auths.tryGetPtr(index);
     }
 
     bool buildTreeFromCollection(const Collection& collection, CollectionTree& result)
