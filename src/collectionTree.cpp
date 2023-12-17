@@ -105,13 +105,13 @@ void CollectionTree::remove(int index)
         const int requestIndex = nodes[i].nameIndex;
 
         if (nameIndex != InvalidIndex) {
-            db->namesAlive.set(nameIndex, false);
+            db->names.erase(nameIndex);
         }
         if (authIndex != InvalidIndex) {
-            db->authsAlive.set(authIndex, false);
+            db->auths.erase(authIndex);
         }
         if (requestIndex != InvalidIndex) {
-            db->requestsAlive.set(requestIndex, false);
+            db->requests.erase(requestIndex);
         }
     }
 
@@ -137,10 +137,7 @@ bool addToTree(int parentIndex, const Item* item, CollectionTree& tree)
         name = item->name.buf_;
     }
 
-    const Auth* auth = nullptr;
-    if (item->auth.has_value()) {
-        auth = &item->auth.value();
-    }
+    const Auth* auth = &item->auth;
 
     const Request* req = nullptr;
     if (item->data.index() == 1) {

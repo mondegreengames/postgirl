@@ -182,6 +182,16 @@ struct Auth
         return nullptr;
     }
 
+    pg::String* findAttributeValuePtr(const char* name) {
+        for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
+            if (strcmp(itr->key.buf_, name) == 0) {
+                return &itr->value;
+            }
+        }
+
+        return nullptr;
+    }
+
     // the value of `result` can be invalidated if any more attributes are added to the authentication!
     bool findAttributeValue(const char* name, pg::String** result) {
         for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
@@ -217,21 +227,19 @@ struct Auth
     }
 
     // adds the attribute if it doesn't exist, and returns a reference to the value
-    pg::String& reserveAttribute(const char* name, const char* defaultValue) {
+    void reserveAttribute(const char* name, const char* defaultValue) {
         pg::String* str;
         if (findAttributeValue(name, &str) == false) {
 
             AuthAttribute attribute;
-            attribute.value = name;
+            attribute.key = name;
             
             if (defaultValue != nullptr) {
                 attribute.value = defaultValue;
             }
 
             attributes.push_back(attribute);
-            return attributes.back().value;
         }
-        return *str;
     }
 
     bool removeAttribute(const char* name) {

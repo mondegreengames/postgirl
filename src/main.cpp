@@ -696,10 +696,6 @@ int main(int argc, char* argv[])
                         char btn_name[32];
                         sprintf(btn_name, "Delete##arg delete%d", i);
                         if (ImGui::Button(btn_name)) {
-                            if (curr_arg_file == i) {
-                                curr_arg_file = -1;
-                                picking_file = false;
-                            }
                             delete_arg_btn.push_back(i);
                             argsDirty = true;
                             treeDB.setDirty(selectedNodeId, true);
@@ -779,6 +775,20 @@ int main(int argc, char* argv[])
                     if (currentAuth->type == AuthType::NONE || currentAuth->type == AuthType::INHERIT) {
                         // nothing
                     }
+                    else if (currentAuth->type == AuthType::BASIC) {
+                        pg::String* key = nullptr, * value = nullptr, *in = nullptr;
+
+                        currentAuth->reserveAttribute("username", nullptr);
+                        currentAuth->reserveAttribute("password", nullptr);
+
+                        pg::String* username = currentAuth->findAttributeValuePtr("username");
+                        pg::String* password = currentAuth->findAttributeValuePtr("password");
+
+                        if (username != nullptr && password != nullptr) {
+                            ImGui::InputText("Username", username->buf_, username->capacity_);
+                            ImGui::InputText("Password", password->buf_, password->capacity_);
+                        }
+                    }
                     else if (currentAuth->type == AuthType::OAUTH2) {
                         const char* grantType = currentAuth->findAttributeValue("grant_type");
 
@@ -801,38 +811,44 @@ int main(int argc, char* argv[])
 
                         if (strcmp(grantType, "client_credentials") == 0) {
                             // TODO: this is temporary, just to have the minimum functionality needed to generate an OAuth2 token
-                            auto& tokenUrl = currentAuth->reserveAttribute("accessTokenUrl", nullptr);
-                            auto& clientId = currentAuth->reserveAttribute("clientId", nullptr);
-                            auto& clientSecret = currentAuth->reserveAttribute("clientSecret", nullptr);
-                            auto& audience = currentAuth->reserveAttribute("audience", nullptr);
+                            currentAuth->reserveAttribute("accessTokenUrl", nullptr);
+                            currentAuth->reserveAttribute("clientId", nullptr);
+                            currentAuth->reserveAttribute("clientSecret", nullptr);
+                            currentAuth->reserveAttribute("audience", nullptr);
 
-                            ImGui::InputText("Token url", tokenUrl.buf_, tokenUrl.capacity_);
-                            ImGui::InputText("Client id", clientId.buf_, tokenUrl.capacity_);
-                            ImGui::InputText("Client secret", clientSecret.buf_, clientSecret.capacity_);
-                            ImGui::InputText("Audience", audience.buf_, audience.capacity_);
+                            auto* tokenUrl = currentAuth->findAttributeValuePtr("accessTokenUrl");
+                            auto* clientId = currentAuth->findAttributeValuePtr("clientId");
+                            auto* clientSecret = currentAuth->findAttributeValuePtr("clientSecret");
+                            auto* audience = currentAuth->findAttributeValuePtr("audience");
+
+                            if (tokenUrl != nullptr && clientId != nullptr && clientSecret != nullptr && audience != nullptr) {
+                                ImGui::InputText("Token url", tokenUrl->buf_, tokenUrl->capacity_);
+                                ImGui::InputText("Client id", clientId->buf_, tokenUrl->capacity_);
+                                ImGui::InputText("Client secret", clientSecret->buf_, clientSecret->capacity_);
+                                ImGui::InputText("Audience", audience->buf_, audience->capacity_);
 
 
-                            if (tokenUrl.buf_[0] != 0 && clientId.buf_[0] != 0 && clientSecret.buf_[0] != 0) {
-                                if (ImGui::Button("Get token")) {
-                                    const char* audience = currentAuth->findAttributeValue("audience");
+                                if (tokenUrl->buf_[0] != 0 && clientId->buf_[0] != 0 && clientSecret->buf_[0] != 0) {
+                                    if (ImGui::Button("Get token")) {
 
-                                    Auth tokenAuth;
-                                    tokenAuth.type = AuthType::BASIC;
-                                    tokenAuth.attributes.push_back(AuthAttribute{ .key = "username", .value = clientId });
-                                    tokenAuth.attributes.push_back(AuthAttribute{ .key = "password", .value = clientSecret });
+                                        Auth tokenAuth;
+                                        tokenAuth.type = AuthType::BASIC;
+                                        tokenAuth.attributes.push_back(AuthAttribute{ .key = "username", .value = *clientId });
+                                        tokenAuth.attributes.push_back(AuthAttribute{ .key = "password", .value = *clientSecret });
 
-                                    Request tokenRequest;
-                                    //tokenRequest.auth = tokenAuth;
-                                    tokenRequest.url = tokenUrl;
-                                    tokenRequest.req_type = RequestType::POST;
-                                    tokenRequest.body_type = BodyType::URL_ENCODED;
-                                    tokenRequest.form_args.push_back(Argument{ .name = "grant_type", .value = grantType, .arg_type = 0 });
+                                        Request tokenRequest;
+                                        //tokenRequest.auth = tokenAuth;
+                                        tokenRequest.url = *tokenUrl;
+                                        tokenRequest.req_type = RequestType::POST;
+                                        tokenRequest.body_type = BodyType::URL_ENCODED;
+                                        tokenRequest.form_args.push_back(Argument{ .name = "grant_type", .value = grantType, .arg_type = 0 });
 
-                                    if (audience != nullptr) {
-                                        tokenRequest.form_args.push_back(Argument{ .name = "audience", .value = audience, .arg_type = 0 });
+                                        if (audience != nullptr) {
+                                            tokenRequest.form_args.push_back(Argument{ .name = "audience", .value = *audience, .arg_type = 0 });
+                                        }
+                                        auto& history = addRequestToHistory(histories, tokenRequest, &tokenAuth);
+                                        processRequest(thread, history, thread_status);
                                     }
-                                    auto& history = addRequestToHistory(histories, tokenRequest, &tokenAuth);
-                                    processRequest(thread, history, thread_status);
                                 }
                             }
                         }
@@ -1055,8 +1071,13 @@ int main(int argc, char* argv[])
                                 if (currentRequest->form_args[i].arg_type == 1) {
                                     sprintf(arg_name, "File##arg name%d", i);
                                     if (ImGui::Button(arg_name)) {
-                                        picking_file = true;
-                                        curr_arg_file = i;
+
+                                        const char* filters[] = { "*.*" };
+                                        char* paths = tinyfd_openFileDialog("Choose file", nullptr, 1, filters, "Any file", 0);
+
+                                        if (paths != nullptr) {
+                                            currentRequest->form_args[i].value = paths;
+                                        }
                                     }
                                 }
                                 ImGui::SameLine();
@@ -1064,10 +1085,6 @@ int main(int argc, char* argv[])
                                 sprintf(btn_name, "Delete##arg delete%d", i);
                                 if (ImGui::Button(btn_name)) {
                                     treeDB.setDirty(selectedNodeId, true);
-                                    if (curr_arg_file == i) {
-                                        curr_arg_file = -1;
-                                        picking_file = false;
-                                    }
                                     delete_arg_btn.push_back(i);
                                 }
                             }
@@ -1167,67 +1184,7 @@ int main(int argc, char* argv[])
             ImGui::EndChild();
             ImGui::EndGroup();
         }
-        if (picking_file) {
-            ImGui::Begin("File Selector", &picking_file);
-            static pg::Vector<pg::String> curr_files;
-            static pg::Vector<pg::String> curr_folders;
-            static pg::String curr_dir(".");
-            if (curr_files.size() == 0 && curr_folders.size()==0) {
-                DIR *dir;
-                dirent *pdir;
-                dir=opendir(curr_dir.buf_);
-                while((pdir=readdir(dir))) {
-                    if (pdir->d_type == DT_DIR) {
-                        curr_folders.push_back(pdir->d_name);
-                    } else if (pdir->d_type == DT_REG) {
-                        curr_files.push_back(pdir->d_name);
-                    }
-                }
-                pg::String aux_dir = curr_dir;
-                if (curr_dir.capacity_ < 2048) curr_dir.realloc(2048);
-#ifdef _WIN32
-                // TODO: verify that this actually works!
-                curr_dir = aux_dir;
-#else
-                realpath(aux_dir.buf_, curr_dir.buf_);
-#endif
-                closedir(dir);
-
-                qsort(curr_folders.begin(), curr_folders.size(), sizeof(*curr_folders.begin()), compareSize);
-                qsort(curr_files.begin(), curr_files.size(), sizeof(*curr_files.begin()), compareSize);
-            }
-
-            
-            // ImGui::Text(curr_dir.buf_);
-            ImGui::Button(curr_dir.buf_);
-            for (int i=0; i<curr_folders.size(); i++) {
-                ImVec2 pos = ImGui::GetCursorScreenPos();
-                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x, pos.y), ImVec2(pos.x + ImGui::GetContentRegionAvail()[0], pos.y + ImGui::GetTextLineHeight()), IM_COL32(100,0,255,50));
-                if (ImGui::MenuItem(curr_folders[i].buf_, NULL)) {
-                    curr_dir.append("/");
-                    curr_dir.append(curr_folders[i]);
-                    curr_files.clear();
-                    curr_folders.clear();
-                }
-            }
-            for (int i=0; i<curr_files.size(); i++) {
-                ImVec2 pos = ImGui::GetCursorScreenPos();
-                ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x, pos.y), ImVec2(pos.x + ImGui::GetContentRegionAvail()[0], pos.y + ImGui::GetTextLineHeight()), IM_COL32(100,100,0,50));
-                if (ImGui::MenuItem(curr_files[i].buf_, NULL)) {
-                    if (curr_arg_file >= 0 && curr_arg_file < currentRequest->form_args.size()) {
-                        pg::String filename = curr_dir;
-                        filename.append("/");
-                        filename.append(curr_files[i]);
-                        currentRequest->form_args[curr_arg_file].value = filename;
-                    }                    
-
-                    picking_file = false;
-                    curr_arg_file = -1;
-                }
-            }
-            ImGui::End();
-        }
-
+        
         ImGui::ShowDemoWindow();
 
         ImGui::End();
