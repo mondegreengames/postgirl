@@ -445,7 +445,7 @@ int main(int argc, char* argv[])
             static bool live_search = true;
             static ImGuiInputTextFlags search_flags = 0; 
 
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.95);
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.95f);
             if (ImGui::InputText("##Search", hist_search.buf_, hist_search.capacity(), search_flags) || update_hist_search)
             {
                 update_hist_search = false;
@@ -550,40 +550,41 @@ int main(int argc, char* argv[])
             if (ImGui::Button("Load collection...")) {
                 const char* filters[] = { "*.json", "*.*" };
                 char* paths = tinyfd_openFileDialog("Import collection", nullptr, 2, filters, "Collections", 1);
-
-                char* context;
+                if (paths != nullptr) {
+                    char* context;
 #ifdef _WIN32
-                char* path = strtok_s(paths, "|", &context);
+                    char* path = strtok_s(paths, "|", &context);
 #else
-                char* path = strtok_r(paths, "|", &context);
+                    char* path = strtok_r(paths, "|", &context);
 #endif
-                while (path != nullptr) {
+                    while (path != nullptr) {
 
-                    // load the collection
-                    Collection l;
-                    if (Collection::Load(path, l)) {
+                        // load the collection
+                        Collection l;
+                        if (Collection::Load(path, l)) {
 
-                        // add to collection tree
-                        CollectionTree tree;
-                        if (treeDB.buildTreeFromCollection(l, tree)) {
-                            printf("Added collection %s\n", path);
+                            // add to collection tree
+                            CollectionTree tree;
+                            if (treeDB.buildTreeFromCollection(l, tree)) {
+                                printf("Added collection %s\n", path);
 
-                            // save in settings
-                            settings.CollectionList.push_back(path);
+                                // save in settings
+                                settings.CollectionList.push_back(path);
+                            }
                         }
-                    }
-                    else {
-                        printf("Unable to load %s\n", path);
-                    }
+                        else {
+                            printf("Unable to load %s\n", path);
+                        }
 
 #ifdef _WIN32
-                    path = strtok_s(nullptr, "|", &context);
+                        path = strtok_s(nullptr, "|", &context);
 #else
-                    path = strtok_r(nullptr, "|", &context);
+                        path = strtok_r(nullptr, "|", &context);
 #endif
-                }
+                    }
 
-                Settings::Save("settings.json", settings);
+                    Settings::Save("settings.json", settings);
+                }
             }
 
             for (int i = 0; i < treeDB.trees.Size; i++) {
@@ -626,7 +627,7 @@ int main(int argc, char* argv[])
 
             if (currentRequest != nullptr) {
 
-                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.125);
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.125f);
                 if (ImGui::BeginCombo("##request_type", requestTypeStrings[(int)currentRequest->req_type])) {
                     for (int n = 0; n < (int)RequestType::_COUNT; n++) {
                         if (ImGui::Selectable(requestTypeStrings[n])) {
@@ -654,14 +655,14 @@ int main(int argc, char* argv[])
                     deconstructUrl(currentRequest->url.buf_, currentRequest->query_args);
                     treeDB.setDirty(selectedNodeId, true);
                 }
+            }
 
-                if (thread_status == FINISHED) {
-                    thread.join();
-                    thread_status = IDLE;
-                    selected = (int)histories.size()-1;
-                    saveHistory(histories, "history.json", settings.PrettifyCollectionsJson);
-                    update_hist_search = true;
-                }
+            if (thread_status == FINISHED) {
+                thread.join();
+                thread_status = IDLE;
+                selected = (int)histories.size() - 1;
+                saveHistory(histories, "history.json", settings.PrettifyCollectionsJson);
+                update_hist_search = true;
             }
 
             ImGui::BeginTabBar("requesttabs");
@@ -672,7 +673,7 @@ int main(int argc, char* argv[])
                 if (currentRequest != nullptr) {
                     bool argsDirty = false;
                     for (int i=0; i<(int)currentRequest->query_args.size(); i++) {
-                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4f);
                         char arg_name[32];
                         sprintf(arg_name, "Name##arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->query_args[i].name[0], currentRequest->query_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
@@ -683,7 +684,7 @@ int main(int argc, char* argv[])
                         }
                         if (!argsDirty && ImGui::IsItemEdited()) argsDirty = true;
                         ImGui::SameLine();
-                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6f);
                         sprintf(arg_name, "Value##arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->query_args[i].value[0], currentRequest->query_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             treeDB.setDirty(selectedNodeId, true);
@@ -885,14 +886,14 @@ int main(int argc, char* argv[])
                     }
                     else {
                         for (int i=0; i< (int)currentAuth->attributes.size(); i++) {
-                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
+                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5f);
                             char arg_name[32];
                             sprintf(arg_name, "Name##auth arg name%d", i);
                             if (ImGui::InputText(arg_name, &currentAuth->attributes[i].key[0], currentAuth->attributes[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                                 // TODO
                             }
                             ImGui::SameLine();
-                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5);
+                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.5f);
                             sprintf(arg_name, "Value##auth arg value%d", i);
                             if (ImGui::InputText(arg_name, &currentAuth->attributes[i].value[0], currentAuth->attributes[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                                 // TODO
@@ -920,7 +921,7 @@ int main(int argc, char* argv[])
                 {
                     static pg::Vector<int> delete_arg_btn;
                     for (int i=0; i<(int)currentRequest->headers.headers.size(); i++) {
-                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2f);
                         char arg_name[32];
                         sprintf(arg_name, "Name##header arg name%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->headers.headers[i].key[0], currentRequest->headers.headers[i].key.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
@@ -930,7 +931,7 @@ int main(int argc, char* argv[])
                             processRequest(thread, history, thread_status);
                         }
                         ImGui::SameLine();
-                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4);
+                        ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.4f);
                         sprintf(arg_name, "Value##header arg value%d", i);
                         if (ImGui::InputText(arg_name, &currentRequest->headers.headers[i].value[0], currentRequest->headers.headers[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                             treeDB.setDirty(selectedNodeId, true);
@@ -979,7 +980,7 @@ int main(int argc, char* argv[])
                         case RequestType::POST:
                         case RequestType::PATCH:
                         case RequestType::PUT:
-                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25);
+                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.25f);
                             if (ImGui::BeginCombo("##content_type", bodyTypeUIStrings[(int)currentRequest->body_type])) {
                                 for (int n = 0; n < (int)BodyType::_COUNT; n++) {
                                     if (ImGui::Selectable(bodyTypeUIStrings[n])) {
@@ -1044,12 +1045,12 @@ int main(int argc, char* argv[])
                             static pg::Vector<int> delete_arg_btn;
 
                             for (int i=0; i<(int)currentRequest->form_args.size(); i++) {
-                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
+                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2f);
                                 char combo_name[32];
                                 sprintf(combo_name, "##combo arg type%d", i);
                                 ImGui::Combo(combo_name, &currentRequest->form_args[i].arg_type, arg_types[(int)currentRequest->req_type], num_arg_types[(int)currentRequest->req_type]);
                                 ImGui::SameLine();
-                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2);
+                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.2f);
                                 char arg_name[32];
                                 sprintf(arg_name, "Name##arg name%d", i);
                                 if (ImGui::InputText(arg_name, &currentRequest->form_args[i].name[0], currentRequest->form_args[i].name.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
@@ -1059,7 +1060,7 @@ int main(int argc, char* argv[])
                                     processRequest(thread, history, thread_status);
                                 }
                                 ImGui::SameLine();
-                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6);
+                                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x*0.6f);
                                 sprintf(arg_name, "Value##arg name%d", i);
                                 if (ImGui::InputText(arg_name, &currentRequest->form_args[i].value[0], currentRequest->form_args[i].value.capacity(), ImGuiInputTextFlags_EnterReturnsTrue)) {
                                     treeDB.setDirty(selectedNodeId, true);

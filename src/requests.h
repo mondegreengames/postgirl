@@ -173,6 +173,7 @@ struct Auth
 
     const char* findAttributeValue(const char* name) const
     {
+        assert(name != nullptr);
         for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
             if (strcmp(itr->key.buf_, name) == 0) {
                 return itr->value.buf_;
@@ -183,6 +184,7 @@ struct Auth
     }
 
     pg::String* findAttributeValuePtr(const char* name) {
+        assert(name != nullptr);
         for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
             if (strcmp(itr->key.buf_, name) == 0) {
                 return &itr->value;
@@ -194,6 +196,7 @@ struct Auth
 
     // the value of `result` can be invalidated if any more attributes are added to the authentication!
     bool findAttributeValue(const char* name, pg::String** result) {
+        assert(name != nullptr);
         for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
             if (strcmp(itr->key.buf_, name) == 0) {
                 if (result != nullptr) {
@@ -207,8 +210,9 @@ struct Auth
     }
 
     bool addAttributeIfDoesntExist(const char* name, const char* value) {
+        assert(name != nullptr);
         if (findAttributeValue(name) == nullptr) {
-            attributes.push_back(AuthAttribute{ .key = name, .value = value });
+            addAttribute(name, value);
             
             return true;
         }
@@ -217,9 +221,10 @@ struct Auth
     }
 
     void addOrUpdateAttribute(const char* name, const char* value) {
+        assert(name != nullptr);
         pg::String* str;
         if (findAttributeValue(name, &str) == false) {
-            attributes.push_back(AuthAttribute{ .key = name, .value = value });
+            addAttribute(name, value);
         }
         else {
             str->set(value);
@@ -228,21 +233,15 @@ struct Auth
 
     // adds the attribute if it doesn't exist, and returns a reference to the value
     void reserveAttribute(const char* name, const char* defaultValue) {
+        assert(name != nullptr);
         pg::String* str;
         if (findAttributeValue(name, &str) == false) {
-
-            AuthAttribute attribute;
-            attribute.key = name;
-            
-            if (defaultValue != nullptr) {
-                attribute.value = defaultValue;
-            }
-
-            attributes.push_back(attribute);
+            addAttribute(name, defaultValue);
         }
     }
 
     bool removeAttribute(const char* name) {
+        assert(name != nullptr);
         for (auto itr = attributes.begin(); itr != attributes.end(); ++itr) {
             if (strcmp(itr->key.buf_, name) == 0) {
                 attributes.erase(itr);
@@ -250,6 +249,20 @@ struct Auth
             }
         }
         return false;
+    }
+
+private:
+    void addAttribute(const char* name, const char* value) {
+        assert(name != nullptr);
+
+        AuthAttribute attribute;
+        attribute.key = name;
+
+        if (value != nullptr) {
+            attribute.value = value;
+        }
+
+        attributes.push_back(attribute);
     }
 };
 

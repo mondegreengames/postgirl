@@ -114,7 +114,7 @@ public:
 
     inline size_t push_back(const T& v) {
         size_t index = data.push_back(v);
-        alive.set(index, true);
+        alive.set((unsigned int)index, true);
         return index;
     }
 
@@ -138,7 +138,7 @@ public:
 
     inline bool erase(size_t index) {
         if (index < data.Size) {
-            alive.set(index, false);
+            alive.set((unsigned int)index, false);
             return true;
         }
 
@@ -155,7 +155,7 @@ public:
     }
 
     inline T* tryGetPtr(size_t index) {
-        if (alive.isSet(index) && index < data.Size) {
+        if (alive.isSet((unsigned int)index) && index < data.Size) {
             return &data.Data[index];
         }
 

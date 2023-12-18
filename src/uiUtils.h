@@ -3,11 +3,12 @@
 #include "imgui.h"
 
 const char* renderComboBox(const char* label, const char* currentValue, int numValue, const char* values[], const char* texts[]) {
+    
 
     // find the selected value
-    int selectedIndex = -1;
+    int selectedIndex = 0;
     for (int i = 0; i < numValue; i++) {
-        if (strcmp(values[i], currentValue) == 0) {
+        if (currentValue != nullptr && strcmp(values[i], currentValue) == 0) {
             selectedIndex = i;
             break;
         }
@@ -17,9 +18,8 @@ const char* renderComboBox(const char* label, const char* currentValue, int numV
         // nothing
     }
 
-    if (selectedIndex == -1) {
+    if (numValue == 0) {
         return nullptr;
     }
-
     return values[selectedIndex];
 };

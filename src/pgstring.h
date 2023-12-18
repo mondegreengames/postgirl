@@ -25,6 +25,7 @@ public:
     }
 
     inline String(const char* str) {
+        assert(str != nullptr);
         int size = (int)strlen(str)+1;
         int cap = DEFAULT_STRING_SIZE;
         if (size > cap) cap = size;
@@ -34,6 +35,7 @@ public:
     }
 
     inline String(const char* str, int size) {
+        assert(str != nullptr);
         int cap = DEFAULT_STRING_SIZE;
         if (size + 1 > cap) cap = size + 1;
         capacity_ = cap;

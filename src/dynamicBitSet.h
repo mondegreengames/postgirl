@@ -8,7 +8,7 @@ class DynamicBitSet
 public:
     pg::Vector<size_t> bits;
 
-    bool isSet(int index) const
+    bool isSet(unsigned int index) const
     {
         int wordIndex = index / wordSizeInBits;
         if (wordIndex >= bits.Size) return false;
@@ -19,7 +19,7 @@ public:
         return result;
     }
 
-    void set(int index, bool value)
+    void set(unsigned int index, bool value)
     {
         int wordIndex = index / wordSizeInBits;
         if (wordIndex > 1024 * 1024) return; // no, that's silly big
