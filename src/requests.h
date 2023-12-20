@@ -276,10 +276,11 @@ typedef struct Request
     pg::String input_json;
     RequestType req_type;
     BodyType body_type;
+    RawBodyType raw_body_type;
     uint64_t timestamp;
 
     Request()
-        : req_type(RequestType::GET), body_type(BodyType::MULTIPART_FORMDATA), timestamp(0)
+        : req_type(RequestType::GET), body_type(BodyType::MULTIPART_FORMDATA), raw_body_type(RawBodyType::TEXT), timestamp(0)
     {}
 
     Request(const Request& request)
@@ -290,7 +291,8 @@ typedef struct Request
         headers(request.headers), 
         input_json(request.input_json), 
         req_type(request.req_type),
-        body_type(request.body_type), 
+        body_type(request.body_type),
+        raw_body_type(request.raw_body_type),
         timestamp(0)
     {}
 

@@ -4,6 +4,8 @@
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/filereadstream.h"
+#include "utils.h"
+#include "jsonUtils.h"
 
 const char* variableTypeStrings[] = {
     "string",
@@ -141,6 +143,27 @@ bool parseRequest(const rapidjson::Value& request, Request& result)
             {
                 result.input_json.set(body["raw"].GetString());
             }
+
+            if (body.HasMember("options")) {
+                auto& options = body["options"];
+                if (options.IsObject() && options.HasMember("raw")) {
+                    auto& raw = options["raw"];
+                    if (raw.IsObject()) {
+                        const char* rawBodyType = nullptr;
+                        if (json::tryGetString(raw, "language", &rawBodyType) && rawBodyType != nullptr) {
+                            if (strcmp(rawBodyType, "json") == 0) {
+                                result.raw_body_type = RawBodyType::JSON;
+                            }
+                            else if (strcmp(rawBodyType, "xml") == 0) {
+                                result.raw_body_type = RawBodyType::XML;
+                            }
+                            else {
+                                result.raw_body_type = RawBodyType::TEXT;
+                            }
+                        }
+                    }
+                }
+            }
         }
         else if (body.HasMember("urlencoded"))
         {
@@ -150,7 +173,29 @@ bool parseRequest(const rapidjson::Value& request, Request& result)
         else if (body.HasMember("formdata"))
         {
             result.body_type = BodyType::MULTIPART_FORMDATA;
-            // TODO: load the parameters
+            auto& formdata = body["formdata"];
+            if (formdata.IsArray()) {
+                for (rapidjson::SizeType i = 0; i < formdata.Size(); i++) {
+                    const char* key = nullptr, * value = nullptr, * type = nullptr;;
+
+                    json::tryGetString(formdata[i], "key", &key);
+                    json::tryGetString(formdata[i], "type", &type);
+
+                    const bool isFile = type != nullptr && strcmp(type, "file") == 0;
+
+                    if (isFile) {
+                        json::tryGetString(formdata[i], "src", &value);
+                    }
+                    else {
+                        json::tryGetString(formdata[i], "value", &value);
+                    }
+
+                    if (key != nullptr && value != nullptr) {
+                        // TODO: does it matter if `value` is null? Should we add it anyway?
+                        result.form_args.push_back(Argument{ .name = key, .value = value, .arg_type = isFile ? 1 : 0 });
+                    }
+                }
+            }
         }
         else if (body.HasMember("file"))
         {
@@ -336,6 +381,261 @@ bool Collection::Load(FILE* fp, Collection& result)
             }
         }
     }
+
+    return true;
+}
+
+bool Collection::Save(const char* filename, const Collection& collection, bool pretty)
+{
+    FILE* fp = fopen(filename, "wb");
+    if (fp == nullptr) return false;
+
+    bool r = Save(fp, collection, pretty);
+
+    fclose(fp);
+
+    return r;
+}
+
+bool writeAuth(rapidjson::Value& parent, rapidjson::Document::AllocatorType& allocator, const Auth& auth) {
+    rapidjson::Value authv(rapidjson::kObjectType);
+
+    json::addStringProperty(authv, "type", authTypeStrings[(int)auth.type], allocator);
+
+    rapidjson::Value attributes(rapidjson::kArrayType);
+
+    // TODO: only include relevant attributes for the given auth type
+    for (auto itr = auth.attributes.begin(); itr != auth.attributes.end(); ++itr) {
+        rapidjson::Value attribute(rapidjson::kObjectType);
+
+        json::addStringProperty(attribute, "key", itr->key.buf_, allocator);
+        json::addStringProperty(attribute, "value", itr->value.buf_, allocator);
+        json::addStringProperty(attribute, "type", "string", allocator); // TODO: support other types
+
+        attributes.PushBack(attribute, allocator);
+    }
+
+    rapidjson::Value namestr;
+    namestr.SetString(authTypeStrings[(int)auth.type], allocator);
+
+    authv.AddMember(namestr, attributes, allocator);
+    parent.AddMember("auth", authv, allocator);
+
+    return true;
+}
+
+bool writeRequest(rapidjson::Value& parent, rapidjson::Document::AllocatorType& allocator, const Request& request) {
+    rapidjson::Value requestV(rapidjson::kObjectType);
+
+    json::addStringProperty(requestV, "method", RequestTypeToString(request.req_type), allocator);
+
+    // write the headers
+    rapidjson::Value headerV(rapidjson::kArrayType);
+    for (auto itr = request.headers.headers.begin(); itr != request.headers.headers.end(); ++itr) {
+        // TODO
+    }
+    requestV.AddMember("header", headerV, allocator);
+
+    // write the body
+    if (request.req_type != RequestType::GET) {
+        rapidjson::Value bodyV(rapidjson::kObjectType);
+        json::addStringProperty(bodyV, "mode", BodyTypeToString(request.body_type), allocator);
+        if (request.body_type == BodyType::RAW) {
+            json::addStringProperty(bodyV, "raw", request.input_json.buf_, allocator);
+        }
+        else {
+            // TODO
+        }
+        
+        rapidjson::Value optionsV(rapidjson::kObjectType);
+        if (request.body_type == BodyType::MULTIPART_FORMDATA) {
+            rapidjson::Value formdataV(rapidjson::kArrayType);
+
+            for (auto itr = request.form_args.begin(); itr != request.form_args.end(); ++itr) {
+                rapidjson::Value dataV(rapidjson::kObjectType);
+
+                json::addStringProperty(dataV, "key", itr->name.buf_, allocator);
+                
+                if (itr->arg_type == 1) {
+                    json::addStringProperty(dataV, "type", "file", allocator);
+                    json::addStringProperty(dataV, "src", itr->value.buf_, allocator);
+                }
+                else {
+                    json::addStringProperty(dataV, "value", itr->value.buf_, allocator);
+                    json::addStringProperty(dataV, "type", "default", allocator);
+                }
+
+                formdataV.PushBack(dataV, allocator);
+            }
+
+            bodyV.AddMember("formdata", formdataV, allocator);
+        }
+        else if (request.body_type == BodyType::RAW) {
+
+            if (request.raw_body_type == RawBodyType::JSON) {
+                json::addStringProperty(optionsV, "language", "json", allocator);
+            }
+            else if (request.raw_body_type == RawBodyType::XML) {
+                json::addStringProperty(optionsV, "language", "xml", allocator);
+            }
+
+            bodyV.AddMember("options", optionsV, allocator);
+        }
+        else {
+            // TODO
+            bodyV.AddMember("options", optionsV, allocator);
+        }
+        requestV.AddMember("body", bodyV, allocator);
+    }
+
+    // write the url
+    if (request.url.buf_[0] != 0) {
+        rapidjson::Value urlV(rapidjson::kObjectType);
+        json::addStringProperty(urlV, "raw", request.url.buf_, allocator);
+
+        // parse the url
+        UrlParts parts;
+        if (ParseUrl(request.url.buf_, UrlPartsFlags::URL_PARTS_FLAG_ALL, parts)) {
+            if (parts.scheme != nullptr) {
+                json::addStringProperty(urlV, "protocol", parts.scheme, allocator);
+            }
+
+            if (parts.host != nullptr) {
+                rapidjson::Value hostsV(rapidjson::kArrayType);
+
+                TokenIterator itr;
+                TokenIterator::init(parts.host, '.', itr);
+                std::string_view hostpart;
+                while (itr.next(hostpart)) {
+                    json::addStringElement(hostsV, hostpart, allocator);
+                }
+
+                urlV.AddMember("host", hostsV, allocator);
+            }
+
+            if (parts.path != nullptr) {
+                rapidjson::Value pathV(rapidjson::kArrayType);
+
+                TokenIterator itr;
+                TokenIterator::init(parts.path, '/', itr);
+                std::string_view pathpart;
+                while (itr.next(pathpart)) {
+                    json::addStringElement(pathV, pathpart, allocator);
+                }
+
+                urlV.AddMember("path", pathV, allocator);
+            }
+
+            if (parts.query != nullptr) {
+                rapidjson::Value queryV(rapidjson::kArrayType);
+
+                TokenIterator itr;
+                TokenIterator::init(parts.query, '&', itr);
+                std::string_view querypart;
+                while (itr.next(querypart)) {
+                    rapidjson::Value queryV2(rapidjson::kObjectType);
+
+                    TokenIterator itr2;
+                    TokenIterator::init(querypart, '=', itr2);
+
+                    std::string_view key, value;
+                    if (itr2.next(key)) {
+                        json::addStringProperty(queryV2, "key", key, allocator);
+
+                        if (itr2.next(value)) {
+                            json::addStringProperty(queryV2, "value", value, allocator);
+                        }
+                    }
+
+                    queryV.PushBack(queryV2, allocator);
+                }
+
+                urlV.AddMember("query", queryV, allocator);
+            }
+
+            FreeUrl(parts);
+        }
+
+        requestV.AddMember("url", urlV, allocator);
+    }
+
+    parent.AddMember("request", requestV, allocator);
+
+    return true;
+}
+
+bool writeItem(rapidjson::Value& parent, rapidjson::Document::AllocatorType& allocator, const Item& item) {
+    rapidjson::Value itemElement(rapidjson::kObjectType);
+
+    json::addStringProperty(itemElement, "name", item.name.buf_, allocator);
+
+    if (item.data.index() == 0) {
+        // write the child items
+        rapidjson::Value childItems(rapidjson::kArrayType);
+
+        for (auto itr = std::get<0>(item.data).begin(); itr != std::get<0>(item.data).end(); ++itr) {
+            if (writeItem(childItems, allocator, *itr) == false) {
+                return false;
+            }
+        }
+
+        itemElement.AddMember("item", childItems, allocator);
+    }
+    else {
+        // write the request
+        if (writeRequest(itemElement, allocator, std::get<1>(item.data)) == false) {
+            return false;
+        }
+    }
+
+    if (item.auth.type != AuthType::INHERIT) {
+        writeAuth(itemElement, allocator, item.auth);
+    }
+
+    parent.PushBack(itemElement, allocator);
+
+    return true;
+}
+
+bool Collection::Save(FILE* fp, const Collection& collection, bool pretty)
+{
+    rapidjson::Document document;
+    document.SetObject();
+    
+    // must pass an allocator when the object may need to allocate memory
+    rapidjson::Document::AllocatorType& allocator = document.GetAllocator();
+
+    // info
+    rapidjson::Value info(rapidjson::kObjectType);
+    json::addStringProperty(info, "name", collection.name.buf_, allocator);
+    json::addStringProperty(info, "schema", "https://schema.getpostman.com/json/collection/v2.1.0/collection.json", allocator);
+    document.AddMember("info", info, allocator);
+
+    // item
+    rapidjson::Value item(rapidjson::kArrayType);
+    for (auto itr = collection.root.begin(); itr != collection.root.end(); ++itr) {
+        writeItem(item, allocator, *itr);
+    }
+    document.AddMember("item", item, allocator);
+
+    // auth
+    if (collection.auth.type != AuthType::NONE && collection.auth.type != AuthType::INHERIT) {
+        writeAuth(document, allocator, collection.auth);
+    }
+
+    rapidjson::StringBuffer strbuf;
+    if (pretty)
+    {
+        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(strbuf);
+        document.Accept(writer);
+    }
+    else
+    {
+        rapidjson::Writer<rapidjson::StringBuffer> writer(strbuf);
+        document.Accept(writer);
+    }
+
+    fputs(strbuf.GetString(), fp);
 
     return true;
 }

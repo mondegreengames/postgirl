@@ -48,4 +48,7 @@ struct Collection
 
     static bool Load(const char* filename, Collection& result);
     static bool Load(FILE* fp, Collection& result);
+
+    static bool Save(const char* filename, const Collection& collection, bool pretty);
+    static bool Save(FILE* fp, const Collection& collection, bool pretty);
 };

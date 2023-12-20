@@ -1,6 +1,7 @@
 #include "utils.h"
 #include "platform.h"
 #include "history.h"
+#include <curl/curl.h>
 
 void readIntFromIni(int& res, FILE* fid) {
     if (fscanf(fid, "\%*s %d", &res) != 1) {
@@ -104,4 +105,62 @@ void Help(const char* desc) {
     }
 }
 
+bool ParseUrl(const char* url, unsigned int flags, UrlParts& result)
+{
+    memset(&result, 0, sizeof(UrlParts));
 
+    CURLU* handle = curl_url();
+    if (curl_url_set(handle, CURLUPART_URL, url, 0) != CURLUE_OK) {
+        return false;
+    }
+    result._internal = handle;
+
+    if ((flags & UrlPartsFlags::URL_PARTS_FLAG_SCHEME) != 0) {
+        curl_url_get(handle, CURLUPART_SCHEME, const_cast<char**>(&result.scheme), 0);
+    }
+
+    if ((flags & UrlPartsFlags::URL_PARTS_FLAG_HOST) != 0) {
+        curl_url_get(handle, CURLUPART_HOST, const_cast<char**>(&result.host), 0);
+    }
+
+    if ((flags & UrlPartsFlags::URL_PARTS_FLAG_PATH) != 0) {
+        curl_url_get(handle, CURLUPART_PATH, const_cast<char**>(&result.path), 0);
+    }
+
+    if ((flags & UrlPartsFlags::URL_PARTS_FLAG_QUERY) != 0) {
+        curl_url_get(handle, CURLUPART_QUERY, const_cast<char**>(&result.query), 0);
+    }
+
+    // TODO: the rest
+
+    result._internal = handle;
+
+    return true;
+}
+
+void FreeUrl(UrlParts& url)
+{
+    if (url.scheme != nullptr) {
+        curl_free(const_cast<char*>(url.scheme));
+        url.scheme = nullptr;
+    }
+
+    if (url.host != nullptr) {
+        curl_free(const_cast<char*>(url.host));
+        url.host = nullptr;
+    }
+
+    if (url.path != nullptr) {
+        curl_free(const_cast<char*>(url.path));
+        url.path = nullptr;
+    }
+
+    if (url.query != nullptr) {
+        curl_free(const_cast<char*>(url.query));
+        url.query = nullptr;
+    }
+
+    // TODO: the rest
+
+    curl_url_cleanup(static_cast<CURLU*>(url._internal));
+}

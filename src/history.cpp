@@ -2,6 +2,7 @@
 #include "platform.h"
 #include "utils.h"
 #include "rapidjson/filereadstream.h"
+#include "jsonUtils.h"
 
 void printHistory(const History& hist) {
     printf("url: %s\ninput_json: %s\nresult: %s\n", hist.request.url.buf_, hist.request.input_json.buf_, hist.response.result.buf_);
@@ -21,58 +22,6 @@ void printHistory(const History& hist) {
 }
 
 
-bool tryGetInt(const rapidjson::Value& value, const char* name, int* result)
-{
-    if (value.HasMember(name))
-    {
-        const auto& ivalue = value[name];
-        if (ivalue.IsInt())
-        {
-            if (result != nullptr) *result = ivalue.GetInt();
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool tryGetString(const rapidjson::Value& value, const char* name, pg::String& result)
-{
-    if (value.HasMember(name))
-    {
-        const auto& svalue = value[name];
-        if (svalue.IsString())
-        {
-            result.set(svalue.GetString());
-            return true;
-        }
-    }
-
-    return false;
-}
-
-template<typename T>
-bool tryGetStringEnum(const rapidjson::Value& value, const char* name, const char* values[], int numValues, T* result)
-{
-    if (value.HasMember(name))
-    {
-        const auto& svalue = value[name];
-        if (svalue.IsString())
-        {
-            auto str = svalue.GetString();
-            for (int i = 0; i < numValues; i++)
-            {
-                if (strcmp(values[i], str) == 0)
-                {
-                    if (result != nullptr) *result = (T)i;
-                    return true;
-                }
-            }
-        }
-    }
-
-    return false;
-}
 
 
 
@@ -105,9 +54,9 @@ pg::Vector<History> loadHistory(const pg::String& filename)
         History hist;
         hist.request.url = pg::String(histories[j]["url"].GetString());
         hist.request.input_json = pg::String(histories[j]["input_json"].GetString());
-        if (tryGetStringEnum(histories[j], "request_type", requestTypeStrings, (int)RequestType::_COUNT, &hist.request.req_type) == false)
+        if (json::tryGetStringEnum(histories[j], "request_type", requestTypeStrings, (int)RequestType::_COUNT, &hist.request.req_type) == false)
             hist.request.req_type = RequestType::GET;
-        if (tryGetStringEnum(histories[j], "body_type", bodyTypeStrings, (int)BodyType::_COUNT, &hist.request.body_type) == false)
+        if (json::tryGetStringEnum(histories[j], "body_type", bodyTypeStrings, (int)BodyType::_COUNT, &hist.request.body_type) == false)
             hist.request.body_type = BodyType::MULTIPART_FORMDATA;
         Platform::isoStringToTimestamp(histories[j]["process_time"].GetString(), &hist.request.timestamp);
         hist.response.result = prettify(pg::String(histories[j]["result"].GetString()));
